@@ -20,6 +20,7 @@ With no `DATABASE_URL` the page shows invented demo data, so you can check the U
 3. In the Vercel project, open **Storage** and add **Neon Postgres**. `DATABASE_URL` is set for you.
 4. Add the rest of the variables from `.env.example` in **Settings → Environment Variables**.
    Generate `CRON_SECRET` with `openssl rand -hex 32`.
+   Leave `DATABASE_URL` alone if Neon already set it.
 5. Locally: `npm install`, `vercel env pull .env.local`, `npm run db:init` (creates the tables).
 6. **Check Triple Whale first** (nothing is written):
    ```bash
@@ -35,10 +36,16 @@ With no `DATABASE_URL` the page shows invented demo data, so you can check the U
 
 ### Scheduling
 
-- **Pro plan:** `vercel.json` runs `/api/sync` every 15 minutes. Nothing else to do.
-- **Hobby plan:** Vercel only allows daily crons, so a `*/15` cron makes the deploy fail. Remove the
-  `crons` entry from `vercel.json` and use `.github/workflows/sync.yml` instead: add repo secrets
-  `SYNC_URL` (`https://<app>.vercel.app/api/sync`) and `CRON_SECRET`.
+The project is on the Vercel Hobby plan, which only allows daily crons, so `/api/sync` is called every
+15 minutes by `.github/workflows/sync.yml`. Add two repo secrets in GitHub
+(**Settings → Secrets and variables → Actions**):
+
+- `SYNC_URL`: `https://<app>.vercel.app/api/sync`
+- `CRON_SECRET`: the same value as in Vercel
+
+Until `SYNC_URL` is set the workflow does nothing. You can run it by hand from the Actions tab.
+If you move to Pro, you can switch to a Vercel cron instead: add
+`{"crons":[{"path":"/api/sync","schedule":"*/15 * * * *"}]}` as `vercel.json` and disable the workflow.
 
 ### ClickUp webhook (optional, makes editor changes show up faster)
 

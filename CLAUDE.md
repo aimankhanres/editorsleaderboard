@@ -34,8 +34,9 @@ Details:
 - Next.js 14 (App Router, TypeScript) deployed on Vercel from GitHub (`main` = production).
 - Neon Postgres via the Vercel Marketplace (`DATABASE_URL`). Schema in `db/schema.sql`,
   applied with `npm run db:init`.
-- Scheduler: Vercel Cron hitting `/api/sync` every 15 min (`vercel.json`). If we stay on the
-  Hobby plan, use a GitHub Actions scheduled workflow calling the same URL with `CRON_SECRET`.
+- Scheduler: we are on the Vercel Hobby plan (daily crons only), so `.github/workflows/sync.yml`
+  calls `/api/sync` every 15 min with `CRON_SECRET` (repo secrets `SYNC_URL`, `CRON_SECRET`).
+  There is no `vercel.json`; on Pro, a Vercel cron could replace the workflow.
 - No API calls from the browser. The sync route writes to Postgres; the page reads from
   `/api/leaderboard`.
 
