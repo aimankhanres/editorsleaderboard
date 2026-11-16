@@ -17,42 +17,45 @@ import { monthOf, monthStart, nextMonth } from './dates';
 import type { AdDayRow } from './store';
 
 type TwRow = {
-  event_date: string;
-  ad_id: string | number;
-  ad_name: string | null;
-  campaign_name: string | null;
-  adset_name: string | null;
-  channel: string | null;
-  spend: number | string | null;
+  day: string;
+  ad: string | number;
+  name: string | null;
+  campaign: string | null;
+  adset: string | null;
+  total_spend: number | string | null;
 };
 
 const sqlString = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
 // Group by day + ad only (never by ad set/campaign), so each ad is counted once per day.
+// ClickHouse puts SELECT aliases in scope for WHERE/GROUP BY, so aliases must not reuse column
+// names (e.g. `SUM(spend) AS spend` breaks the filters). Columns are qualified with `a.`.
 const QUERY = (channel: string) => `
 SELECT
-  toString(event_date) AS event_date,
-  toString(ad_id)      AS ad_id,
-  any(ad_name)         AS ad_name,
-  any(campaign_name)   AS campaign_name,
-  any(adset_name)      AS adset_name,
-  any(channel)         AS channel,
-  SUM(spend)           AS spend
-FROM ads_table
-WHERE event_date BETWEEN @startDate AND @endDate
-  AND channel = ${sqlString(channel)}
-  AND ad_id IS NOT NULL AND toString(ad_id) != ''
-GROUP BY event_date, ad_id
+  toString(a.event_date) AS day,
+  toString(a.ad_id)      AS ad,
+  any(a.ad_name)         AS name,
+  any(a.campaign_name)   AS campaign,
+  any(a.adset_name)      AS adset,
+  SUM(a.spend)           AS total_spend
+FROM ads_table a
+WHERE a.event_date BETWEEN @startDate AND @endDate
+  AND a.channel = ${sqlString(channel)}
+  AND a.ad_id IS NOT NULL AND a.ad_id != ''
+GROUP BY a.event_date, a.ad_id
 `;
 
-async function runQuery(startDate: string, endDate: string): Promise<TwRow[]> {
+/** Triple Whale's own documented example query: tells "bad query" apart from "bad key / shop". */
+const PROBE_QUERY = 'SELECT SUM(spend) AS spend, channel FROM ads_table a WHERE event_date BETWEEN @startDate AND @endDate GROUP BY channel';
+
+async function runQuery<T = TwRow>(startDate: string, endDate: string, query: string = QUERY(cfg.tw.channel)): Promise<T[]> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(`${cfg.tw.base}/orcabase/api/sql`, {
       method: 'POST',
       headers: { 'x-api-key': cfg.tw.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         shopId: cfg.tw.shopId,
-        query: QUERY(cfg.tw.channel),
+        query,
         period: { startDate, endDate },
       }),
       cache: 'no-store',
@@ -63,7 +66,7 @@ async function runQuery(startDate: string, endDate: string): Promise<TwRow[]> {
       continue;
     }
     const text = await res.text();
-    let body: { data?: TwRow[]; message?: string; error?: string } | null = null;
+    let body: { data?: T[]; message?: string; error?: string } | null = null;
     try { body = JSON.parse(text); } catch { /* not JSON */ }
     if (!res.ok || !body || !Array.isArray(body.data)) {
       // Include a short snippet of the response so failures are diagnosable (never contains our key).
@@ -85,19 +88,28 @@ export async function fetchAdSpend(from: string, to: string): Promise<AdDayRow[]
     const lastDay = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).toISOString().slice(0, 10);
     const end = lastDay > to ? to : lastDay;
     for (const r of await runQuery(start, end)) {
-      const adName = r.ad_name ?? '';
+      const adName = r.name ?? '';
       out.push({
-        date: String(r.event_date).slice(0, 10),
-        adId: String(r.ad_id),
+        date: String(r.day).slice(0, 10),
+        adId: String(r.ad),
         adName,
-        campaign: r.campaign_name,
-        adset: r.adset_name,
-        channel: r.channel,
-        spend: Number(r.spend ?? 0) || 0,
+        campaign: r.campaign,
+        adset: r.adset,
+        channel: cfg.tw.channel,
+        spend: Number(r.total_spend ?? 0) || 0,
         briefIds: extractBriefIds(adName),
       });
     }
     month = nextMonth(month);
   }
   return out;
+}
+
+/** Runs the documented example query; returns spend per channel or the error text. */
+export async function probe(from: string, to: string): Promise<unknown> {
+  try {
+    return await runQuery<Record<string, unknown>>(from, to, PROBE_QUERY);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
 }

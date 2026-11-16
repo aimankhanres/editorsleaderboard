@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
-import { fetchAdSpend } from '@/lib/triplewhale';
+import { fetchAdSpend, probe } from '@/lib/triplewhale';
 import { lookupBriefs } from '@/lib/clickup';
 import { allocate } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
@@ -29,7 +29,9 @@ export async function GET(req: Request) {
       rows = await fetchAdSpend(from, today);
     } catch (e) {
       console.error('dry run failed', e);
-      return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+      // Also run Triple Whale's documented example query: if that works, our query is the problem.
+      const exampleQuery = await probe(from, today);
+      return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e), exampleQuery }, { status: 500 });
     }
     const total = rows.reduce((s, r) => s + r.spend, 0);
     const withBrief = rows.filter(r => r.briefIds.length).reduce((s, r) => s + r.spend, 0);
