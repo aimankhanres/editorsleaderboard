@@ -74,7 +74,10 @@ export async function GET(req: Request) {
     // 5. Log
     const pending = await store.countPendingBriefs(from);
     await store.finishSyncRun(runId, { ok: true, ads, lookups, pending, error: res.rateLimited ? 'ClickUp rate limited; will continue next run' : null });
-    return NextResponse.json({ ok: true, months, rows: rows.length, ads, lookups, pending, rateLimited: res.rateLimited, ms: Date.now() - started });
+    return NextResponse.json({
+      ok: true, months, rows: rows.length, ads, lookups, resolved: res.resolved.length, failed: res.failed.length,
+      lookupError: res.firstError, pending, rateLimited: res.rateLimited, ms: Date.now() - started,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('sync failed', e);

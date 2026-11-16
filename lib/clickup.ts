@@ -151,6 +151,7 @@ export async function lookupBriefs(briefIds: string[], deadline: number) {
   const resolved: BriefInfo[] = [];
   const failed: string[] = [];
   let rateLimited = false;
+  let firstError: string | null = null;
   for (const id of briefIds) {
     if (Date.now() > deadline - 3000) break;
     try {
@@ -158,8 +159,9 @@ export async function lookupBriefs(briefIds: string[], deadline: number) {
     } catch (e) {
       if (e instanceof RateLimited) { rateLimited = true; break; }
       console.error(`ClickUp lookup ${id} failed:`, e);
+      firstError ??= `${id}: ${e instanceof Error ? e.message : String(e)}`;
       failed.push(id);
     }
   }
-  return { resolved, failed, rateLimited, lookups: resolved.length + failed.length };
+  return { resolved, failed, rateLimited, firstError, lookups: resolved.length + failed.length };
 }
