@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
-import { fetchAdSpend, probe } from '@/lib/triplewhale';
+import { diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { lookupBriefs } from '@/lib/clickup';
 import { allocate } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
@@ -21,6 +21,9 @@ export async function GET(req: Request) {
   const month = monthOf(today);
   const months = Number(today.slice(8, 10)) <= 3 ? [prevMonth(month), month] : [month];
   const from = monthStart(months[0]);
+
+  // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
+  if (url.searchParams.get('diag')) return NextResponse.json(await diagnose(from, today));
 
   // ?dry=1 : fetch spend only, write nothing. Use it to check Triple Whale numbers against Ads Manager.
   if (url.searchParams.get('dry')) {

@@ -66,14 +66,15 @@ async function runQuery<T = TwRow>(startDate: string, endDate: string, query: st
       continue;
     }
     const text = await res.text();
-    let body: { data?: T[]; message?: string; error?: string } | null = null;
+    let body: unknown = null;
     try { body = JSON.parse(text); } catch { /* not JSON */ }
-    if (!res.ok || !body || !Array.isArray(body.data)) {
-      // Include a short snippet of the response so failures are diagnosable (never contains our key).
-      const detail = body?.message ?? body?.error ?? text.slice(0, 300) ?? 'empty response';
-      throw new Error(`Triple Whale ${res.status}: ${detail}`);
-    }
-    return body.data;
+    // The live API returns a bare array of rows; the docs show { data: [...] }. Accept both.
+    const rows = Array.isArray(body) ? body : (body as { data?: unknown })?.data;
+    if (res.ok && Array.isArray(rows)) return rows as T[];
+    // Include a short snippet of the response so failures are diagnosable (never contains our key).
+    const b = body as { message?: string; error?: string } | null;
+    const detail = b?.message ?? b?.error ?? (text.slice(0, 300) || 'empty response');
+    throw new Error(`Triple Whale ${res.status}: ${detail}`);
   }
   throw new Error('Triple Whale: rate limited');
 }
@@ -107,9 +108,32 @@ export async function fetchAdSpend(from: string, to: string): Promise<AdDayRow[]
 
 /** Runs the documented example query; returns spend per channel or the error text. */
 export async function probe(from: string, to: string): Promise<unknown> {
+  return tryQuery(from, to, PROBE_QUERY);
+}
+
+async function tryQuery(from: string, to: string, query: string): Promise<unknown> {
   try {
-    return await runQuery<Record<string, unknown>>(from, to, PROBE_QUERY);
+    const rows = await runQuery<Record<string, unknown>>(from, to, query);
+    return { ok: true, rows: rows.length, sample: rows.slice(0, 2) };
   } catch (e) {
-    return e instanceof Error ? e.message : String(e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** Diagnostics: runs variants of the ad-level query, adding one feature at a time, to find what the API rejects. */
+export async function diagnose(from: string, to: string): Promise<Record<string, unknown>> {
+  const ch = sqlString(cfg.tw.channel);
+  const variants: Record<string, string> = {
+    '1_minimal': `SELECT ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY ad_id LIMIT 3`,
+    '2_by_day': `SELECT event_date, ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY event_date, ad_id LIMIT 3`,
+    '3_alias_a': `SELECT a.event_date, a.ad_id, SUM(a.spend) AS total_spend FROM ads_table a WHERE a.event_date BETWEEN @startDate AND @endDate AND a.channel = ${ch} GROUP BY a.event_date, a.ad_id LIMIT 3`,
+    '4_any_name': `SELECT event_date, ad_id, any(ad_name) AS ad_label, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY event_date, ad_id LIMIT 3`,
+    '5_name_in_group': `SELECT event_date, ad_id, ad_name, campaign_name, adset_name, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY event_date, ad_id, ad_name, campaign_name, adset_name LIMIT 3`,
+    '6_tostring': `SELECT toString(event_date) AS day, ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY event_date, ad_id LIMIT 3`,
+    '7_ad_id_filter': `SELECT event_date, ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} AND ad_id != '' GROUP BY event_date, ad_id LIMIT 3`,
+    '8_full': QUERY(cfg.tw.channel) + ' LIMIT 3',
+  };
+  const out: Record<string, unknown> = {};
+  for (const [k, q] of Object.entries(variants)) out[k] = await tryQuery(from, to, q);
+  return out;
 }
