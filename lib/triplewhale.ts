@@ -13,7 +13,6 @@
  */
 import { cfg } from './config';
 import { extractBriefIds } from './briefs';
-import { monthOf, monthStart, nextMonth } from './dates';
 import type { AdDayRow } from './store';
 
 type TwRow = {
@@ -43,7 +42,12 @@ WHERE a.event_date BETWEEN @startDate AND @endDate
   AND a.channel = ${sqlString(channel)}
   AND a.ad_id IS NOT NULL AND a.ad_id != ''
 GROUP BY a.event_date, a.ad_id
+HAVING SUM(a.spend) != 0
+ORDER BY ad
 `;
+// The API rejects large result sets with a bare "400: An error occurred", so we query one day at a
+// time and page through it.
+const PAGE = 1000;
 
 /** Triple Whale's own documented example query: tells "bad query" apart from "bad key / shop". */
 const PROBE_QUERY = 'SELECT SUM(spend) AS spend, channel FROM ads_table a WHERE event_date BETWEEN @startDate AND @endDate GROUP BY channel';
@@ -79,31 +83,38 @@ async function runQuery<T = TwRow>(startDate: string, endDate: string, query: st
   throw new Error('Triple Whale: rate limited');
 }
 
-/** Ad-level daily spend for [from, to] inclusive (YYYY-MM-DD), one request per calendar month. */
+/** Ad-level daily spend for [from, to] inclusive (YYYY-MM-DD): one day per request, paged. */
 export async function fetchAdSpend(from: string, to: string): Promise<AdDayRow[]> {
   if (!cfg.tw.apiKey || !cfg.tw.shopId) throw new Error('TRIPLEWHALE_API_KEY / TRIPLEWHALE_SHOP_ID not set');
   const out: AdDayRow[] = [];
-  let month = monthOf(from);
-  while (monthStart(month) <= to) {
-    const start = monthStart(month) < from ? from : monthStart(month);
-    const lastDay = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).toISOString().slice(0, 10);
-    const end = lastDay > to ? to : lastDay;
-    for (const r of await runQuery(start, end)) {
-      const adName = r.name ?? '';
-      out.push({
-        date: String(r.day).slice(0, 10),
-        adId: String(r.ad),
-        adName,
-        campaign: r.campaign,
-        adset: r.adset,
-        channel: cfg.tw.channel,
-        spend: Number(r.total_spend ?? 0) || 0,
-        briefIds: extractBriefIds(adName),
-      });
+  for (const day of daysBetween(from, to)) {
+    for (let offset = 0; ; offset += PAGE) {
+      const rows = await runQuery(day, day, `${QUERY(cfg.tw.channel)} LIMIT ${PAGE} OFFSET ${offset}`);
+      for (const r of rows) {
+        const adName = r.name ?? '';
+        out.push({
+          date: String(r.day).slice(0, 10),
+          adId: String(r.ad),
+          adName,
+          campaign: r.campaign,
+          adset: r.adset,
+          channel: cfg.tw.channel,
+          spend: Number(r.total_spend ?? 0) || 0,
+          briefIds: extractBriefIds(adName),
+        });
+      }
+      if (rows.length < PAGE) break;
     }
-    month = nextMonth(month);
   }
   return out;
+}
+
+function daysBetween(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let d = new Date(`${from}T00:00:00Z`); d.toISOString().slice(0, 10) <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+    days.push(d.toISOString().slice(0, 10));
+  }
+  return days;
 }
 
 /** Runs the documented example query; returns spend per channel or the error text. */
@@ -132,6 +143,7 @@ export async function diagnose(from: string, to: string): Promise<Record<string,
     '6_tostring': `SELECT toString(event_date) AS day, ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} GROUP BY event_date, ad_id LIMIT 3`,
     '7_ad_id_filter': `SELECT event_date, ad_id, SUM(spend) AS total_spend FROM ads_table WHERE event_date BETWEEN @startDate AND @endDate AND channel = ${ch} AND ad_id != '' GROUP BY event_date, ad_id LIMIT 3`,
     '8_full': QUERY(cfg.tw.channel) + ' LIMIT 3',
+    '9_full_day_page': QUERY(cfg.tw.channel) + ` LIMIT ${PAGE}`,
   };
   const out: Record<string, unknown> = {};
   for (const [k, q] of Object.entries(variants)) out[k] = await tryQuery(from, to, q);
