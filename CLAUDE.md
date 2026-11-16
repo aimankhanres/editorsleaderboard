@@ -14,7 +14,8 @@ ranked list with rank-change arrows, "no longer with us" tags).
 
 Details:
 - Use **ad-level** rows only. Never sum ad sets or campaigns (double-counting).
-- Brief ID regex: `OO[-_ ]?\d+`, case-insensitive, normalised to `OO-<digits>` (see `lib/briefs.ts`).
+- Brief ID regex: `(OO|AOG|CIN)[-_ ]?\d+` (Oregano, Garlic, Cinnamon), case-insensitive, normalised to
+  `PREFIX-<digits>`; a prefix glued to a letter (`rOO-`, `rCIN-`, `iCIN-`) is ignored (see `lib/briefs.ts`).
 - The same brief ID on several ads (duplicates and copies) rolls up to the same task.
 - An ad with 2 brief IDs: split spend evenly across the briefs.
 - A task with 2 editors: `SPLIT_MODE=split` gives each an equal share; `SPLIT_MODE=joint`
@@ -80,7 +81,7 @@ Built (Nov 2026): everything in the data flow above, the UI, optional shared-pas
 (`APP_PASSWORD`, `middleware.ts`), GitHub Actions fallback scheduler, README.
 
 Findings from the live ClickUp workspace:
-- `OO-xxxx` is stored in the short_text custom field **Brief ID** (`f129c811-0d3b-481d-9971-eb0b10bcf746`).
+- `OO-` / `AOG-` / `CIN-` IDs are stored in the short_text custom field **Brief ID** (`f129c811-0d3b-481d-9971-eb0b10bcf746`).
   Custom task IDs are `RS-xxxx` and do not reliably share the number, so lookups use `CLICKUP_BRIEF_FIELD_ID`.
 - **Editor** is a `users` field. Tasks also have **Sr Editor** and **Strategist** users fields; match the
   field name exactly.
@@ -89,8 +90,14 @@ Findings from the live ClickUp workspace:
 - OO-19041 and OO-14983 have no task with that Brief ID (they only appear as Old Brief Id), so ads
   carrying them land in Needs review as "Brief not found".
 
+Triple Whale (verified against the live API, Nov 2026):
+- The API returns a bare JSON array of rows, not `{ data }` as documented. Both are accepted.
+- Large result sets fail with a bare `400: An error occurred`, so spend is fetched one day per request,
+  paged with LIMIT/OFFSET, zero-spend ads dropped. `?diag=1` runs query variants to debug.
+- ClickHouse SELECT aliases must not reuse column names (they shadow columns in WHERE).
+- Nov 1-16 2026: $11.94M Meta spend, ~25% on OO- briefs; the rest mostly AOG-/CIN-.
+
 Still open:
-- Triple Whale client written from the docs but not yet run against a real key: use `/api/sync?dry=1`.
 - Access control decision (shared password is in; Google sign-in not built).
 
 ## Conventions

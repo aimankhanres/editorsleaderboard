@@ -7,7 +7,7 @@ import { ago, initials, money, monthLabel } from '@/lib/format';
 const POLL_MS = 60_000;
 
 const REVIEW_LABEL: Record<ReviewKind, { title: string; hint: string }> = {
-  no_brief_id: { title: 'No brief ID in ad name', hint: 'Ad name has no OO-xxxx, so it cannot be linked to a ClickUp task.' },
+  no_brief_id: { title: 'No brief ID in ad name', hint: 'Ad name has no OO-, AOG- or CIN- brief ID, so it cannot be linked to a ClickUp task.' },
   task_not_found: { title: 'Brief not found in ClickUp', hint: 'No task has this Brief ID.' },
   no_editor: { title: 'Editor field empty', hint: 'Task found, but nobody is set in its Editor field.' },
   pending: { title: 'Waiting for ClickUp lookup', hint: 'Will be resolved by an upcoming sync.' },

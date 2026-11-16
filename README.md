@@ -1,7 +1,7 @@
 # Editor Leaderboard
 
 Ranks editors by the Meta spend on ads made from their briefs. Spend comes from Triple Whale;
-brief IDs (`OO-xxxx`) in ad names identify ClickUp tasks; each task's **Editor** field says who
+brief IDs in ad names (`OO-` Oregano, `AOG-` Garlic, `CIN-` Cinnamon) identify ClickUp tasks; each task's **Editor** field says who
 gets the credit. See `CLAUDE.md` for the full spec.
 
 ## Run it locally (demo data)
@@ -69,7 +69,8 @@ open dashboard. Google sign-in for the company domain is not built yet.
 - Anything that can't be credited is listed under **Needs review** with its spend: ads with no brief ID,
   brief IDs with no ClickUp task, tasks with an empty Editor field, and lookups still pending. Ads whose
   name mentions a different editor than ClickUp are listed too (already credited, just flagged).
-- `rOO-12345` in an ad name (a reference to the original brief on resize variants) is not counted as a brief ID.
+- Brief IDs are `OO-`, `AOG-` and `CIN-` followed by digits. References glued to another letter, such as `rOO-12345`,
+  `rCIN-…` or `iCIN-…` (resize / iteration of an original brief), are not counted as brief IDs.
 
 ## Editors who leave
 
