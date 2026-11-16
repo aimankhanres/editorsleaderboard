@@ -182,6 +182,10 @@ export async function clickupCheck(sampleBriefId: string): Promise<Record<string
     task_by_custom_id: `/task/RS-10150?custom_task_ids=true&team_id=${cfg.cu.teamId}`,
     list_tasks: `/list/1300340000012951/task?page=0`,
     user: `/user`,
+    f_fields_eq: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }]) }),
+    f_field_single: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_field: JSON.stringify({ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }) }),
+    f_fields_notnull: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: 'IS NOT NULL' }]) }),
+    f_list_eq: `/list/1300340000012951/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }]) }),
   };
   const probeResults: Record<string, unknown> = {};
   for (const [k, path] of Object.entries(probes)) {
@@ -189,6 +193,15 @@ export async function clickupCheck(sampleBriefId: string): Promise<Record<string
     const t = await r.text();
     probeResults[k] = { status: r.status, body: r.ok ? `${t.length} bytes` : t.slice(0, 200) };
   }
+  const rs: Record<string, unknown> = {};
+  for (const id of ['OO-23150', 'OO-102515', 'OO-102845', 'CIN-101490', 'AOG-11705', 'AOG-101503']) {
+    const n = id.split('-')[1];
+    const r = await cuFetch(`/task/RS-${n}?custom_task_ids=true&team_id=${cfg.cu.teamId}`);
+    if (!r.ok) { rs[id] = r.status; continue; }
+    const t = await r.json() as CuTask;
+    rs[id] = t.custom_fields?.find(c => c.id === cfg.cu.briefFieldId)?.value ?? null;
+  }
+  probeResults.rsBriefField = rs;
   const teamDetail = (teamsBody as { teams?: { id: string; members?: { user: { id: number; role: number } }[] }[] } | null)?.teams?.[0];
   return { token: tokenInfo, configuredTeamId: cfg.cu.teamId, teamsStatus: teamsRes.status, teams, sample, probeResults,
     memberCount: teamDetail?.members?.length };
