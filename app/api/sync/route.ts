@@ -24,7 +24,13 @@ export async function GET(req: Request) {
 
   // ?dry=1 : fetch spend only, write nothing. Use it to check Triple Whale numbers against Ads Manager.
   if (url.searchParams.get('dry')) {
-    const rows = await fetchAdSpend(from, today);
+    let rows;
+    try {
+      rows = await fetchAdSpend(from, today);
+    } catch (e) {
+      console.error('dry run failed', e);
+      return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    }
     const total = rows.reduce((s, r) => s + r.spend, 0);
     const withBrief = rows.filter(r => r.briefIds.length).reduce((s, r) => s + r.spend, 0);
     return NextResponse.json({

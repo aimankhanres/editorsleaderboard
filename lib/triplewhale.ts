@@ -62,9 +62,13 @@ async function runQuery(startDate: string, endDate: string): Promise<TwRow[]> {
       await new Promise(r => setTimeout(r, Math.min(wait, 20) * 1000));
       continue;
     }
-    const body = await res.json().catch(() => null) as { data?: TwRow[]; message?: string } | null;
+    const text = await res.text();
+    let body: { data?: TwRow[]; message?: string; error?: string } | null = null;
+    try { body = JSON.parse(text); } catch { /* not JSON */ }
     if (!res.ok || !body || !Array.isArray(body.data)) {
-      throw new Error(`Triple Whale ${res.status}: ${body?.message ?? 'unexpected response'}`);
+      // Include a short snippet of the response so failures are diagnosable (never contains our key).
+      const detail = body?.message ?? body?.error ?? text.slice(0, 300) ?? 'empty response';
+      throw new Error(`Triple Whale ${res.status}: ${detail}`);
     }
     return body.data;
   }
