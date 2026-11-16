@@ -31,7 +31,7 @@ export type EditorRow = {
   prevRank: number | null;
 };
 
-export type ReviewKind = 'no_brief_id' | 'pending' | 'task_not_found' | 'no_editor' | 'name_mismatch';
+export type ReviewKind = 'no_brief_id' | 'pending' | 'task_not_found' | 'other_workspace' | 'no_editor' | 'name_mismatch';
 
 export type ReviewItem = {
   kind: ReviewKind;

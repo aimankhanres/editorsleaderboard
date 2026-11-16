@@ -87,6 +87,9 @@ Findings from the live ClickUp workspace:
   field name exactly.
 - Resize variants (Google/YT Variants folder) have their own Brief ID plus an **Old Brief Id** field and
   names like `OO-24590_rOO-19041_...`. `rOO-` is not extracted as a brief ID.
+- 6-digit brief IDs (OO-102573, AOG-100721, CIN-102186 ...) are created in a separate ClickUp workspace
+  (resize tasks link to the original via the "Org Task ID" field); our token can't read it. Unfound 6-digit
+  briefs are listed as "Made in another ClickUp workspace", not "Brief not found" (`isOtherWorkspaceBrief`).
 - OO-19041 and OO-14983 have no task with that Brief ID (they only appear as Old Brief Id), so ads
   carrying them land in Needs review as "Brief not found".
 

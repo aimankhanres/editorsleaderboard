@@ -21,6 +21,15 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0]?.toLowerCase() ?
  * Pure attribution. Ad spend -> briefs (split evenly) -> editors (split or joint).
  * Everything that can't be credited ends up in `review` with its spend; nothing is dropped.
  */
+/**
+ * 6-digit brief IDs (OO-102573, AOG-100721, CIN-102186 ...) are created in a separate ClickUp workspace
+ * (resize tasks link to them via "Org Task ID"), which our token cannot read. When one isn't found in
+ * Resilia's workspace, list it on its own instead of as a broken "not found".
+ */
+export function isOtherWorkspaceBrief(briefId: string): boolean {
+  return /^[A-Z]+-\d{6,}$/.test(briefId);
+}
+
 export function allocate(
   ads: AdAgg[],
   briefs: Map<string, BriefInfo>,
@@ -76,6 +85,8 @@ export function allocate(
       const base = { adId: ad.adId, adName: ad.adName, spend: share, briefId, taskUrl: info?.taskUrl ?? null };
       if (!info || info.status === 'pending' || info.status === 'error') {
         review.push({ ...base, kind: 'pending', detail: info?.status === 'error' ? 'ClickUp lookup failed, will retry' : 'Not looked up yet' });
+      } else if (info.status === 'not_found' && isOtherWorkspaceBrief(briefId)) {
+        review.push({ ...base, kind: 'other_workspace', detail: 'Original brief lives in another ClickUp workspace' });
       } else if (info.status === 'not_found') {
         review.push({ ...base, kind: 'task_not_found', detail: 'No ClickUp task has this Brief ID' });
       } else if (!info.editors.length || info.status === 'no_editor') {
