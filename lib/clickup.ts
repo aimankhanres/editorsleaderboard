@@ -175,5 +175,21 @@ export async function clickupCheck(sampleBriefId: string): Promise<Record<string
   const teams = teamsBody?.teams?.map(t => ({ id: t.id, name: t.name })) ?? teamsBody;
   let sample: unknown;
   try { sample = await lookupBrief(sampleBriefId); } catch (e) { sample = e instanceof Error ? e.message : String(e); }
-  return { token: tokenInfo, configuredTeamId: cfg.cu.teamId, teamsStatus: teamsRes.status, teams, sample };
+  const probes: Record<string, string> = {
+    team_tasks_nofilter: `/team/${cfg.cu.teamId}/task?page=0`,
+    spaces: `/team/${cfg.cu.teamId}/space`,
+    task_by_id: `/task/86d3zdu72`,
+    task_by_custom_id: `/task/RS-10150?custom_task_ids=true&team_id=${cfg.cu.teamId}`,
+    list_tasks: `/list/1300340000012951/task?page=0`,
+    user: `/user`,
+  };
+  const probeResults: Record<string, unknown> = {};
+  for (const [k, path] of Object.entries(probes)) {
+    const r = await cuFetch(path);
+    const t = await r.text();
+    probeResults[k] = { status: r.status, body: r.ok ? `${t.length} bytes` : t.slice(0, 200) };
+  }
+  const teamDetail = (teamsBody as { teams?: { id: string; members?: { user: { id: number; role: number } }[] }[] } | null)?.teams?.[0];
+  return { token: tokenInfo, configuredTeamId: cfg.cu.teamId, teamsStatus: teamsRes.status, teams, sample, probeResults,
+    memberCount: teamDetail?.members?.length };
 }
