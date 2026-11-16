@@ -165,3 +165,15 @@ export async function lookupBriefs(briefIds: string[], deadline: number) {
   }
   return { resolved, failed, rateLimited, firstError, lookups: resolved.length + failed.length };
 }
+
+/** Diagnostics: which workspaces this token can see, and one sample lookup. Read-only. */
+export async function clickupCheck(sampleBriefId: string): Promise<Record<string, unknown>> {
+  const tokenInfo = { set: Boolean(cfg.cu.token), length: cfg.cu.token.length, startsWithPk: cfg.cu.token.startsWith('pk_'),
+    hasWhitespace: /\s/.test(cfg.cu.token) };
+  const teamsRes = await cuFetch('/team');
+  const teamsBody = await teamsRes.json().catch(() => null) as { teams?: { id: string; name: string }[] } | null;
+  const teams = teamsBody?.teams?.map(t => ({ id: t.id, name: t.name })) ?? teamsBody;
+  let sample: unknown;
+  try { sample = await lookupBrief(sampleBriefId); } catch (e) { sample = e instanceof Error ? e.message : String(e); }
+  return { token: tokenInfo, configuredTeamId: cfg.cu.teamId, teamsStatus: teamsRes.status, teams, sample };
+}

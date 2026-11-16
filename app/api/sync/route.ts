@@ -3,7 +3,7 @@ import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
 import { diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
-import { lookupBriefs } from '@/lib/clickup';
+import { clickupCheck, lookupBriefs } from '@/lib/clickup';
 import { allocate } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
 
@@ -23,6 +23,7 @@ export async function GET(req: Request) {
   const from = monthStart(months[0]);
 
   // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
+  if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck('AOG-10150'));
   if (url.searchParams.get('diag')) return NextResponse.json(await diagnose(from, today));
 
   // ?dry=1 : fetch spend only, write nothing. Use it to check Triple Whale numbers against Ads Manager.
