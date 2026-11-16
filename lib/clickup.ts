@@ -168,41 +168,13 @@ export async function lookupBriefs(briefIds: string[], deadline: number) {
 
 /** Diagnostics: which workspaces this token can see, and one sample lookup. Read-only. */
 export async function clickupCheck(sampleBriefId: string): Promise<Record<string, unknown>> {
-  const tokenInfo = { set: Boolean(cfg.cu.token), length: cfg.cu.token.length, startsWithPk: cfg.cu.token.startsWith('pk_'),
-    hasWhitespace: /\s/.test(cfg.cu.token) };
+  const token = { set: Boolean(cfg.cu.token), startsWithPk: cfg.cu.token.startsWith('pk_'), hasWhitespace: /\s/.test(cfg.cu.token) };
   const teamsRes = await cuFetch('/team');
   const teamsBody = await teamsRes.json().catch(() => null) as { teams?: { id: string; name: string }[] } | null;
-  const teams = teamsBody?.teams?.map(t => ({ id: t.id, name: t.name })) ?? teamsBody;
   let sample: unknown;
   try { sample = await lookupBrief(sampleBriefId); } catch (e) { sample = e instanceof Error ? e.message : String(e); }
-  const probes: Record<string, string> = {
-    team_tasks_nofilter: `/team/${cfg.cu.teamId}/task?page=0`,
-    spaces: `/team/${cfg.cu.teamId}/space`,
-    task_by_id: `/task/86d3zdu72`,
-    task_by_custom_id: `/task/RS-10150?custom_task_ids=true&team_id=${cfg.cu.teamId}`,
-    list_tasks: `/list/1300340000012951/task?page=0`,
-    user: `/user`,
-    f_fields_eq: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }]) }),
-    f_field_single: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_field: JSON.stringify({ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }) }),
-    f_fields_notnull: `/team/${cfg.cu.teamId}/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: 'IS NOT NULL' }]) }),
-    f_list_eq: `/list/1300340000012951/task?` + new URLSearchParams({ custom_fields: JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: '=', value: 'AOG-10150' }]) }),
+  return {
+    token, teamId: cfg.cu.teamId, briefFieldId: cfg.cu.briefFieldId,
+    teams: teamsBody?.teams?.map(t => ({ id: t.id, name: t.name })) ?? teamsRes.status, sample,
   };
-  const probeResults: Record<string, unknown> = {};
-  for (const [k, path] of Object.entries(probes)) {
-    const r = await cuFetch(path);
-    const t = await r.text();
-    probeResults[k] = { status: r.status, body: r.ok ? `${t.length} bytes` : t.slice(0, 200) };
-  }
-  const rs: Record<string, unknown> = {};
-  for (const id of ['OO-23150', 'OO-102515', 'OO-102845', 'CIN-101490', 'AOG-11705', 'AOG-101503']) {
-    const n = id.split('-')[1];
-    const r = await cuFetch(`/task/RS-${n}?custom_task_ids=true&team_id=${cfg.cu.teamId}`);
-    if (!r.ok) { rs[id] = r.status; continue; }
-    const t = await r.json() as CuTask;
-    rs[id] = t.custom_fields?.find(c => c.id === cfg.cu.briefFieldId)?.value ?? null;
-  }
-  probeResults.rsBriefField = rs;
-  const teamDetail = (teamsBody as { teams?: { id: string; members?: { user: { id: number; role: number } }[] }[] } | null)?.teams?.[0];
-  return { token: tokenInfo, configuredTeamId: cfg.cu.teamId, teamsStatus: teamsRes.status, teams, sample, probeResults,
-    memberCount: teamDetail?.members?.length };
 }

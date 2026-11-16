@@ -9,7 +9,8 @@ export const cfg = {
     token: process.env.CLICKUP_TOKEN ?? '',
     teamId: process.env.CLICKUP_TEAM_ID ?? '',
     editorField: (process.env.CLICKUP_EDITOR_FIELD ?? 'Editor').trim().toLowerCase(),
-    briefFieldId: process.env.CLICKUP_BRIEF_FIELD_ID ?? '',
+    // Resilia's "Brief ID" short_text field. Override with CLICKUP_BRIEF_FIELD_ID if it ever changes.
+    briefFieldId: process.env.CLICKUP_BRIEF_FIELD_ID?.trim() || 'f129c811-0d3b-481d-9971-eb0b10bcf746',
   },
   splitMode: (process.env.SPLIT_MODE === 'joint' ? 'joint' : 'split') as 'split' | 'joint',
   maxLookups: Number(process.env.MAX_CLICKUP_LOOKUPS_PER_RUN ?? 250),
