@@ -31,7 +31,7 @@ With no `DATABASE_URL` the page shows invented demo data, so you can check the U
    ```bash
    curl -H "Authorization: Bearer $CRON_SECRET" https://<app>.vercel.app/api/sync
    ```
-   Each run looks up at most `MAX_CLICKUP_LOOKUPS_PER_RUN` (80) briefs, so the first month fills in over
+   Each run looks up at most `MAX_CLICKUP_LOOKUPS_PER_RUN` (250) briefs, so the first month fills in over
    a few runs. Until then those ads show under **Needs review → Waiting for ClickUp lookup**.
 
 ### Scheduling
