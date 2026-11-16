@@ -6,7 +6,8 @@ let client: NeonQueryFunction<false, false> | null = null;
 export function db(): NeonQueryFunction<false, false> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
-  client ??= neon(url);
+  // Next.js caches fetch() by default, and Neon queries go over fetch: never cache them.
+  client ??= neon(url, { fetchOptions: { cache: 'no-store' } });
   return client;
 }
 

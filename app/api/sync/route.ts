@@ -8,6 +8,8 @@ import { allocate } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 export const maxDuration = 300; // seconds; Hobby with Fluid compute allows 300
 const BUDGET_MS = Number(process.env.SYNC_BUDGET_SECONDS ?? 240) * 1000;
 

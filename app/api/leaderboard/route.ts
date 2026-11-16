@@ -4,6 +4,8 @@ import { isMonth, monthOf, todayIn } from '@/lib/dates';
 import { buildLeaderboard } from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 export async function GET(req: Request) {
   const param = new URL(req.url).searchParams.get('month');
