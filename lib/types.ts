@@ -18,8 +18,11 @@ export type RosterEntry = { name: string; avatar: string | null; active: boolean
 
 export type EditorBrief = { briefId: string; taskName: string | null; taskUrl: string | null; spend: number; ads: number };
 
-/** An ad credited to an editor whose spend (the whole ad, not the editor's share) is >= the winner threshold */
-export type WinnerAd = { adId: string; adName: string; spend: number; briefId: string; taskUrl: string | null };
+/**
+ * A winning creative: a brief whose ads together (all copies, the full spend, not the editor's share)
+ * reached the winner threshold in the selected period.
+ */
+export type WinnerAd = { briefId: string; taskName: string | null; taskUrl: string | null; spend: number; ads: number };
 
 export type EditorRow = {
   key: string;
@@ -42,7 +45,7 @@ export type TeamBoard = {
   name: string;
   /** Spend credited to this team's members */
   spend: number;
-  /** Distinct winner ads across the team */
+  /** Distinct winning briefs across the team */
   winners: number;
   /** Members ranked by spend; members with no spend yet come last with spend 0 */
   editors: EditorRow[];

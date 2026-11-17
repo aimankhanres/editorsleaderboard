@@ -7,7 +7,7 @@ import { TEAMS, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
-  briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }>; winners: Map<string, WinnerAd> };
+  briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }> };
 
 export type Allocation = {
   total: number;
@@ -40,6 +40,8 @@ export function allocate(
   winnerSpend: number = cfg.winnerSpend,
 ): Allocation {
   const acc = new Map<string, Acc>();
+  // Full spend and ads per credited brief (before splitting between editors), for winner detection
+  const briefTotals = new Map<string, { spend: number; ads: Set<string> }>();
   const review: ReviewItem[] = [];
   let total = 0;
   let attributed = 0;
@@ -61,15 +63,12 @@ export function allocate(
       const active = sorted.every(e => roster.get(e.key)?.active ?? true);
       let a = acc.get(key);
       if (!a) {
-        a = { key, name: names.join(' / '), active, spend: 0, ads: new Set(), briefs: new Map(), winners: new Map(),
+        a = { key, name: names.join(' / '), active, spend: 0, ads: new Set(), briefs: new Map(),
           avatar: sorted.length === 1 ? (roster.get(sorted[0].key)?.avatar ?? sorted[0].avatar ?? null) : null };
         acc.set(key, a);
       }
       a.spend += each;
       a.ads.add(ad.adId);
-      if (ad.spend >= winnerSpend && !a.winners.has(ad.adId)) {
-        a.winners.set(ad.adId, { adId: ad.adId, adName: ad.adName, spend: round2(ad.spend), briefId: info.briefId, taskUrl: info.taskUrl });
-      }
       const b = a.briefs.get(info.briefId) ?? { info, spend: 0, ads: new Set<string>() };
       b.spend += each;
       b.ads.add(ad.adId);
@@ -99,6 +98,10 @@ export function allocate(
         review.push({ ...base, kind: 'no_editor', detail: info.taskName ?? undefined });
       } else {
         credit(info.editors, share, ad, info);
+        const bt = briefTotals.get(briefId) ?? { spend: 0, ads: new Set<string>() };
+        bt.spend += share;
+        bt.ads.add(ad.adId);
+        briefTotals.set(briefId, bt);
         attributed += share;
         info.editors.forEach(e => creditedKeys.add(e.key));
       }
@@ -131,7 +134,12 @@ export function allocate(
     briefs: [...a.briefs.values()]
       .map((b): EditorBrief => ({ briefId: b.info.briefId, taskName: b.info.taskName, taskUrl: b.info.taskUrl, spend: round2(b.spend), ads: b.ads.size }))
       .sort((x, y) => y.spend - x.spend),
-    winners: [...a.winners.values()].sort((x, y) => y.spend - x.spend),
+    // Winner = a brief whose ads together reached the threshold; counts for every editor on it
+    winners: [...a.briefs.values()]
+      .map(b => ({ b, t: briefTotals.get(b.info.briefId) }))
+      .filter(({ t }) => t && t.spend >= winnerSpend)
+      .map(({ b, t }): WinnerAd => ({ briefId: b.info.briefId, taskName: b.info.taskName, taskUrl: b.info.taskUrl, spend: round2(t!.spend), ads: t!.ads.size }))
+      .sort((x, y) => y.spend - x.spend),
   })).sort((x, y) => y.spend - x.spend || x.name.localeCompare(y.name));
 
   review.sort((a, b) => b.spend - a.spend);
@@ -169,7 +177,7 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
     const prevRank = new Map(prevOrder.map((r, i) => [r.key, i + 1]));
     return {
       id: team.id, name: team.name, spend: round2(spend),
-      winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
+      winners: new Set(rows.flatMap(r => r.winners.map(w => w.briefId))).size,
       editors: rows.map((r, i) => ({
         ...r, share: spend ? r.spend / spend : 0, rank: i + 1,
         prevRank: r.spend > 0 ? prevRank.get(r.key) ?? null : null,

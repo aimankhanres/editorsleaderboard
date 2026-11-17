@@ -160,12 +160,16 @@ h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .move.up { color: var(--up); } .move.down { color: var(--down); } .move.same { color: var(--faint); }
 .move.new { color: var(--accent); font-size: 10.5px; letter-spacing: .04em; }
 
-.detail-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; padding: 4px 18px 18px 94px; }
+.detail-panel { display: flex; flex-direction: column; gap: 14px; padding: 4px 18px 18px 94px; }
 .detail-block h4 { margin: 8px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .winner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.winner-list li { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; background: var(--win-soft); border: 1px solid var(--win-line); border-radius: 10px; padding: 7px 10px; font-size: 13.5px; }
+.winner-list li { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; background: var(--win-soft); border: 1px solid var(--win-line); border-radius: 10px; padding: 7px 10px; font-size: 13.5px; }
 .w-spend { font-weight: 750; color: var(--win); font-variant-numeric: tabular-nums; }
 .w-name { word-break: break-word; color: var(--text-2); }
+.w-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+tr.win td { background: var(--win-soft); }
+tr.win .trophy { color: var(--win); vertical-align: -1px; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
@@ -197,7 +201,7 @@ tr:last-child td { border-bottom: 0; }
 @media (max-width: 900px) {
   .thead, .row-main { grid-template-columns: 56px minmax(150px, 1fr) 76px 96px 16px; }
   .thead .c-num, .row-main .c-num, .thead .c-share, .row-main .c-share { display: none; }
-  .detail-panel { grid-template-columns: 1fr; padding-left: 18px; }
+  .detail-panel { padding-left: 18px; }
 }
 
 @media (max-width: 640px) {
@@ -225,5 +229,5 @@ tr:last-child td { border-bottom: 0; }
   .table-tools { padding: 12px; }
   .tools-right, .search { width: 100%; }
   .winner-list li { grid-template-columns: 70px minmax(0, 1fr); }
-  .winner-list li a, .winner-list li > .mono { grid-column: 2; }
+  .winner-list li .w-meta { grid-column: 2; white-space: normal; }
 }

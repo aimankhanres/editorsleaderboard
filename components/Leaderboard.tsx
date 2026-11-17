@@ -184,7 +184,7 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
       <section className="stats">
         <Stat label={`${team.name} team spend`} value={money(team.spend)}
           sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
-        <Stat label={`Winner ads (${threshold}+)`} value={String(team.winners)} highlight
+        <Stat label={`Winners (${threshold}+ briefs)`} value={String(team.winners)} highlight
           sub={team.winners ? `from ${editorsWithWinners} editor${editorsWithWinners === 1 ? '' : 's'}` : `none ${when} yet`} />
         <Stat label="Editors with spend" value={`${withSpend.length} of ${team.editors.length}`}
           sub={idle.length ? `${idle.length} with no spend ${when}` : 'Everyone has spend'} />
@@ -263,8 +263,8 @@ function Trophy({ size = 14 }: { size?: number }) {
 }
 
 function WinnerBadge({ n, threshold }: { n: number; threshold: string }) {
-  if (!n) return <span className="winners none" title={`No ads with ${threshold}+ spend`}>0</span>;
-  return <span className="winners" title={`${n} ad${n === 1 ? '' : 's'} with ${threshold}+ spend`}><Trophy size={13} />{n}</span>;
+  if (!n) return <span className="winners none" title={`No brief with ${threshold}+ spend`}>0</span>;
+  return <span className="winners" title={`${n} brief${n === 1 ? '' : 's'} with ${threshold}+ spend across all copies`}><Trophy size={13} />{n}</span>;
 }
 
 function Avatar({ name, src, size = 40 }: { name: string; src: string | null; size?: number }) {
@@ -312,7 +312,7 @@ function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: n
       <div className="thead" role="row">
         <span className="c-rank">#</span>
         <span className="c-editor">Editor</span>
-        <span className="c-win" title={`Ads with ${threshold}+ spend`}>Winners</span>
+        <span className="c-win" title={`Briefs with ${threshold}+ spend across all their ad copies`}>Winners</span>
         <span className="c-num">Briefs</span>
         <span className="c-num">Ads</span>
         <span className="c-spend">Spend</span>
@@ -342,28 +342,30 @@ function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: n
             {isOpen && (
               <div className="detail-panel">
                 <div className="detail-block">
-                  <h4><Trophy size={14} /> Winner ads ({threshold}+)</h4>
+                  <h4><Trophy size={14} /> Winners ({threshold}+ across all copies)</h4>
                   {e.winners.length ? (
                     <ul className="winner-list">
                       {e.winners.map(w => (
-                        <li key={w.adId}>
+                        <li key={w.briefId}>
                           <span className="w-spend">{money(w.spend)}</span>
-                          <span className="w-name">{w.adName}</span>
-                          {w.taskUrl ? <a className="mono" href={w.taskUrl} target="_blank" rel="noreferrer">{w.briefId}</a> : <span className="mono">{w.briefId}</span>}
+                          <span className="w-name">
+                            {w.taskUrl ? <a href={w.taskUrl} target="_blank" rel="noreferrer">{w.taskName ?? w.briefId}</a> : (w.taskName ?? w.briefId)}
+                          </span>
+                          <span className="w-meta"><span className="mono">{w.briefId}</span> · {w.ads} ad{w.ads === 1 ? '' : 's'}</span>
                         </li>
                       ))}
                     </ul>
-                  ) : <p className="muted">No ad reached {threshold} in this period.</p>}
+                  ) : <p className="muted">No brief reached {threshold} in this period.</p>}
                 </div>
                 <div className="detail-block">
-                  <h4>Briefs</h4>
+                  <h4>All briefs ({e.briefs.length})</h4>
                   <div className="scroll">
                     <table className="briefs">
-                      <thead><tr><th>Brief</th><th>ClickUp task</th><th className="r">Ads</th><th className="r">Spend</th></tr></thead>
+                      <thead><tr><th>Brief</th><th>ClickUp task</th><th className="r">Ads</th><th className="r">Credited spend</th></tr></thead>
                       <tbody>
                         {e.briefs.map(b => (
-                          <tr key={b.briefId}>
-                            <td className="mono">{b.briefId}</td>
+                          <tr key={b.briefId} className={e.winners.some(w => w.briefId === b.briefId) ? 'win' : ''}>
+                            <td className="mono nowrap">{e.winners.some(w => w.briefId === b.briefId) && <Trophy size={12} />} {b.briefId}</td>
                             <td>{b.taskUrl ? <a href={b.taskUrl} target="_blank" rel="noreferrer">{b.taskName ?? 'Open task'}</a> : b.taskName ?? '—'}</td>
                             <td className="r">{b.ads}</td>
                             <td className="r">{money(b.spend)}</td>
