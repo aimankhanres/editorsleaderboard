@@ -38,6 +38,13 @@ Details:
   credited to them via the Editor field, whatever the task type.
 - To add/move someone, edit `lib/teams.ts` and push.
 
+## Channels
+
+- Meta (`facebook-ads`, all campaigns) and Google (`google-ads`, only `DEMAND_GEN` / `VIDEO` campaign types;
+  Search/Shopping/Display have no editor creatives). Defined in `lib/channels.ts`. Google ad ids are stored
+  with a `g:` prefix. The UI has a Meta / Google / All switch (`/api/leaderboard?channel=`); Meta is the default.
+- Snapshots are per view: Meta uses the plain editor key, others are prefixed (`google|u:1`, `all|u:1`).
+
 ## Stack
 
 - Next.js 14 (App Router, TypeScript) deployed on Vercel from GitHub (`main` = production).

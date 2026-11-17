@@ -7,6 +7,7 @@ import { clickupCheck, lookupBriefs } from '@/lib/clickup';
 import { extractBriefIds } from '@/lib/briefs';
 import { allocate, buildTeams } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
+import { VIEWS, snapPrefix, viewChannels } from '@/lib/channels';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -81,6 +82,11 @@ export async function GET(req: Request) {
     return NextResponse.json({
       from, to: today, rows: rows.length, ads: new Set(rows.map(r => r.adId)).size,
       total: Math.round(total * 100) / 100, withBriefId: Math.round(withBrief * 100) / 100,
+      byChannel: Object.fromEntries([...new Set(rows.map(r => r.channel ?? ''))].map(c => {
+        const rs = rows.filter(r => r.channel === c);
+        return [c, { ads: new Set(rs.map(r => r.adId)).size, total: Math.round(rs.reduce((s, r) => s + r.spend, 0)),
+          withBriefId: Math.round(rs.filter(r => r.briefIds.length).reduce((s, r) => s + r.spend, 0)) }];
+      })),
       sample: rows.slice(0, 10),
     });
   }
@@ -105,10 +111,12 @@ export async function GET(req: Request) {
     // 4. Snapshot today's ranks per synced month
     const roster = await store.loadRoster();
     for (const m of months) {
-      const monthAds = await store.loadMonthAds(m);
-      const briefs = await store.loadBriefMap([...new Set(monthAds.flatMap(a => a.briefIds))]);
-      const { editors } = allocate(monthAds, briefs, roster);
-      await store.writeSnapshot(today, m, editors.map((e, i) => ({ key: e.key, spend: e.spend, rank: i + 1 })));
+      for (const v of VIEWS) {
+        const monthAds = await store.loadMonthAds(m, viewChannels(v.id));
+        const briefs = await store.loadBriefMap([...new Set(monthAds.flatMap(a => a.briefIds))]);
+        const { editors } = allocate(monthAds, briefs, roster);
+        await store.writeSnapshot(today, m, editors.map((e, i) => ({ key: e.key, spend: e.spend, rank: i + 1 })), snapPrefix(v.id));
+      }
     }
 
     // 5. Log

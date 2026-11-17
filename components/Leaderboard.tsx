@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import { ago, initials, money, monthLabel } from '@/lib/format';
+import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
 
 const POLL_MS = 60_000;
 
@@ -28,6 +29,11 @@ export default function Leaderboard() {
   const [data, setData] = useState<LeaderboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setViewState] = useState<View | null>(null);
+  const [channel, setChannelState] = useState<ChannelView>('meta');
+  const setChannel = (c: ChannelView) => {
+    setChannelState(c);
+    try { localStorage.setItem('channel', c); } catch { /* storage unavailable */ }
+  };
   const [, tick] = useState(0);
 
   const setView = (v: View) => {
@@ -35,9 +41,11 @@ export default function Leaderboard() {
     if (typeof window !== 'undefined') history.replaceState(null, '', `#${v}`);
   };
 
-  const load = useCallback(async (m: string | null) => {
+  const load = useCallback(async (m: string | null, ch: ChannelView) => {
     try {
-      const res = await fetch(`/api/leaderboard${m ? `?month=${m}` : ''}`, { cache: 'no-store' });
+      const qs = new URLSearchParams({ channel: ch });
+      if (m) qs.set('month', m);
+      const res = await fetch(`/api/leaderboard?${qs}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setData(json);
@@ -48,25 +56,30 @@ export default function Leaderboard() {
   }, []);
 
   useEffect(() => {
-    load(month);
-    const id = setInterval(() => { if (!document.hidden) load(month); }, POLL_MS);
+    load(month, channel);
+    const id = setInterval(() => { if (!document.hidden) load(month, channel); }, POLL_MS);
     return () => clearInterval(id);
-  }, [month, load]);
+  }, [month, channel, load]);
 
   useEffect(() => { const id = setInterval(() => tick(t => t + 1), 30_000); return () => clearInterval(id); }, []);
-  useEffect(() => { setViewState(readHash()); }, []);
+  useEffect(() => {
+    setViewState(readHash());
+    try { const c = localStorage.getItem('channel'); if (isView(c)) setChannelState(c); } catch { /* storage unavailable */ }
+  }, []);
 
   const teams = data?.teams ?? [];
   const current: View = view && (view === 'review' || teams.some(t => t.id === view)) ? view : teams[0]?.id ?? 'review';
   const team = teams.find(t => t.id === current) ?? null;
   const reviewCount = data?.review.length ?? 0;
+  const label = viewLabel(data?.channel ?? channel);
+  const stale = data != null && data.channel !== channel;
 
   return (
     <main className="wrap">
       <header className="top">
         <div>
           <h1>Editor Leaderboard</h1>
-          <p className="sub">Meta spend on ads built from each editor&apos;s briefs</p>
+          <p className="sub">{label === 'All' ? 'Meta + Google' : label} spend on ads built from each editor&apos;s briefs{label !== 'Meta' ? ' (Google: video campaigns only)' : ''}</p>
         </div>
         <div className="sync">
           {data?.demo && <span className="pill demo">Demo data</span>}
@@ -90,23 +103,32 @@ export default function Leaderboard() {
             Needs review {reviewCount > 0 && <span className="count warn">{reviewCount}</span>}
           </button>
         </nav>
+        <div className="right">
+        <nav className="channels" role="tablist" aria-label="Ad channel">
+          {VIEWS.map(v => (
+            <button key={v.id} role="tab" aria-selected={channel === v.id} className={channel === v.id ? 'on' : ''} onClick={() => setChannel(v.id)}>{v.label}</button>
+          ))}
+        </nav>
         <nav className="months" aria-label="Month">
           {(data?.months ?? []).map(m => (
             <button key={m} className={m === data?.month ? 'on' : ''} onClick={() => setMonth(m)}>{monthLabel(m)}</button>
           ))}
         </nav>
+        </div>
       </div>
 
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
 
-      {data && team && <TeamView key={`${team.id}-${data.month}`} team={team} total={data.total} />}
-      {data && current === 'review' && <ReviewView data={data} />}
+      <div className={stale ? 'loading' : ''}>
+        {data && team && <TeamView key={`${team.id}-${data.month}-${data.channel}`} team={team} total={data.total} label={label} />}
+        {data && current === 'review' && <ReviewView data={data} label={label} />}
+      </div>
     </main>
   );
 }
 
-function TeamView({ team, total }: { team: TeamBoard; total: number }) {
+function TeamView({ team, total, label }: { team: TeamBoard; total: number; label: string }) {
   const [query, setQuery] = useState('');
   const [showIdle, setShowIdle] = useState(false);
   const withSpend = team.editors.filter(e => e.spend > 0);
@@ -118,7 +140,7 @@ function TeamView({ team, total }: { team: TeamBoard; total: number }) {
   return (
     <>
       <section className="stats">
-        <Stat label={`${team.name} team spend`} value={money(team.spend)} sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all Meta spend` : undefined} />
+        <Stat label={`${team.name} team spend`} value={money(team.spend)} sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
         <Stat label="Top editor" value={withSpend[0] ? money(withSpend[0].spend) : '—'} sub={withSpend[0]?.name ?? 'No spend yet'} />
         <Stat label="Editors with spend" value={`${withSpend.length} / ${team.editors.length}`} sub={idle.length ? `${idle.length} with no spend yet` : 'Everyone has spend'} />
         <Stat label="Briefs with spend" value={String(briefs)} sub={withSpend.length ? `avg ${money(team.spend / withSpend.length)} per editor` : undefined} />
@@ -152,12 +174,12 @@ function TeamView({ team, total }: { team: TeamBoard; total: number }) {
   );
 }
 
-function ReviewView({ data }: { data: LeaderboardPayload }) {
+function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }) {
   const unattributed = Math.max(0, data.total - data.attributed);
   return (
     <>
       <section className="stats">
-        <Stat label="Total Meta spend" value={money(data.total)} />
+        <Stat label={label === 'All' ? 'Total spend (Meta + Google)' : `Total ${label} spend`} value={money(data.total)} />
         <Stat label="Credited to editors" value={money(data.attributed)} sub={data.total ? `${Math.round((data.attributed / data.total) * 100)}% (all editors, any team)` : undefined} />
         <Stat label="Not credited" value={money(unattributed)} warn={unattributed > 0} sub={`${data.review.length} items`} />
         <Stat label="Shared briefs" value={data.splitMode === 'joint' ? 'Joint' : 'Split'} sub={data.splitMode === 'joint' ? 'credited to the pair' : 'split evenly between editors'} />

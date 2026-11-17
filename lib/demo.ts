@@ -4,6 +4,7 @@ import { extractBriefIds } from './briefs';
 import { monthOf, prevMonth, todayIn } from './dates';
 import { allocate, buildTeams, rank } from './leaderboard';
 import { TEAMS } from './teams';
+import type { ChannelView } from './channels';
 import type { AdAgg, BriefInfo, LeaderboardPayload, RosterEntry } from './types';
 
 // Demo uses the real team rosters (so both boards fill) with random numbers. Local preview only.
@@ -16,8 +17,8 @@ function rng(seed: number) {
   };
 }
 
-export function demoLeaderboard(month: string): LeaderboardPayload {
-  const rand = rng(Number(month.replace('-', '')));
+export function demoLeaderboard(month: string, view: ChannelView = 'meta'): LeaderboardPayload {
+  const rand = rng(Number(month.replace('-', '')) + (view === 'google' ? 7 : view === 'all' ? 13 : 0));
   const roster = new Map<string, RosterEntry>(
     MEMBERS.map(m => [`u:${m.id}`, { name: m.name, avatar: null, active: true }]),
   );
@@ -66,6 +67,7 @@ export function demoLeaderboard(month: string): LeaderboardPayload {
   const current = monthOf(todayIn(cfg.timezone));
   return {
     month,
+    channel: view,
     months: [current, prevMonth(current), prevMonth(prevMonth(current))],
     total: alloc.total,
     attributed: alloc.attributed,

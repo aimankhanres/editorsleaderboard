@@ -72,6 +72,11 @@ open dashboard. Google sign-in for the company domain is not built yet.
 - Brief IDs are `OO-`, `AOG-` and `CIN-` followed by digits. References glued to another letter, such as `rOO-12345`,
   `rCIN-…` or `iCIN-…` (resize / iteration of an original brief), are not counted as brief IDs.
 
+## Channels
+
+Meta and Google video ads (Demand Gen / Video campaigns) are both synced from Triple Whale. The dashboard
+has a **Meta / Google / All** switch; see `lib/channels.ts`.
+
 ## Teams
 
 The dashboard shows two boards, **Resizing** and **Iterations**. Who is on each is set in `lib/teams.ts`

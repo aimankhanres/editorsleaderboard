@@ -54,6 +54,12 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); letter-s
 .teams button { padding: 9px 16px; border-radius: 9px; color: var(--muted); font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
 .teams button:hover { color: var(--text); }
 .teams button.on { background: linear-gradient(180deg, #252c3d, #1d2331); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+.right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 100%; }
+.channels { display: inline-flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.channels button { padding: 6px 12px; border-radius: 7px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.channels button:hover { color: var(--text); }
+.channels button.on { background: var(--accent); color: #0b0d14; }
+.loading { opacity: .55; transition: opacity .15s; pointer-events: none; }
 .months { display: flex; gap: 4px; overflow-x: auto; max-width: 100%; }
 .months button { padding: 7px 12px; border-radius: 8px; color: var(--muted); border: 1px solid transparent; white-space: nowrap; font-size: 13px; }
 .months button:hover { color: var(--text); background: var(--panel); }

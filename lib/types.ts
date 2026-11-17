@@ -55,6 +55,8 @@ export type ReviewItem = {
 
 export type LeaderboardPayload = {
   month: string;
+  /** Which ad channels the numbers cover: meta, google or all */
+  channel: 'meta' | 'google' | 'all';
   months: string[];
   total: number;
   attributed: number;

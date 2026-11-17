@@ -1,5 +1,5 @@
 /**
- * Triple Whale: Meta ad-level daily spend.
+ * Triple Whale: ad-level daily spend for the channels in lib/channels.ts (Meta, Google video).
  *
  * From the docs (triplewhale.readme.io/reference/data-out-execute-custom-sql-query, docs/ads-table), Nov 2026:
  *   POST https://api.triplewhale.com/api/v2/orcabase/api/sql   header x-api-key
@@ -13,6 +13,7 @@
  */
 import { cfg } from './config';
 import { extractBriefIds } from './briefs';
+import { CHANNELS, type Channel } from './channels';
 import type { AdDayRow } from './store';
 
 type TwRow = {
@@ -29,7 +30,7 @@ const sqlString = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'
 // Group by day + ad only (never by ad set/campaign), so each ad is counted once per day.
 // ClickHouse puts SELECT aliases in scope for WHERE/GROUP BY, so aliases must not reuse column
 // names (e.g. `SUM(spend) AS spend` breaks the filters). Columns are qualified with `a.`.
-const QUERY = (channel: string) => `
+const QUERY = (channel: string, campaignTypes: string[] | null = null) => `
 SELECT
   toString(a.event_date) AS day,
   toString(a.ad_id)      AS ad,
@@ -39,7 +40,8 @@ SELECT
   SUM(a.spend)           AS total_spend
 FROM ads_table a
 WHERE a.event_date BETWEEN @startDate AND @endDate
-  AND a.channel = ${sqlString(channel)}
+  AND a.channel = ${sqlString(channel)}${campaignTypes ? `
+  AND a.campaign_type IN (${campaignTypes.map(sqlString).join(', ')})` : ''}
   AND a.ad_id IS NOT NULL AND a.ad_id != ''
 GROUP BY a.event_date, a.ad_id
 HAVING SUM(a.spend) != 0
@@ -83,22 +85,27 @@ async function runQuery<T = TwRow>(startDate: string, endDate: string, query: st
   throw new Error('Triple Whale: rate limited');
 }
 
-/** Ad-level daily spend for [from, to] inclusive (YYYY-MM-DD): one day per request, paged. */
-export async function fetchAdSpend(from: string, to: string): Promise<AdDayRow[]> {
+/** Ad-level daily spend for [from, to] inclusive (YYYY-MM-DD), every channel, fetched in parallel. */
+export async function fetchAdSpend(from: string, to: string, channels: Channel[] = CHANNELS): Promise<AdDayRow[]> {
   if (!cfg.tw.apiKey || !cfg.tw.shopId) throw new Error('TRIPLEWHALE_API_KEY / TRIPLEWHALE_SHOP_ID not set');
+  return (await Promise.all(channels.map(c => fetchChannel(c, from, to)))).flat();
+}
+
+/** One channel: one day per request, paged. */
+async function fetchChannel(ch: Channel, from: string, to: string): Promise<AdDayRow[]> {
   const out: AdDayRow[] = [];
   for (const day of daysBetween(from, to)) {
     for (let offset = 0; ; offset += PAGE) {
-      const rows = await runQuery(day, day, `${QUERY(cfg.tw.channel)} LIMIT ${PAGE} OFFSET ${offset}`);
+      const rows = await runQuery(day, day, `${QUERY(ch.tw, ch.campaignTypes)} LIMIT ${PAGE} OFFSET ${offset}`);
       for (const r of rows) {
         const adName = r.name ?? '';
         out.push({
           date: String(r.day).slice(0, 10),
-          adId: String(r.ad),
+          adId: `${ch.adIdPrefix}${r.ad}`,
           adName,
           campaign: r.campaign,
           adset: r.adset,
-          channel: cfg.tw.channel,
+          channel: ch.tw,
           spend: Number(r.total_spend ?? 0) || 0,
           briefIds: extractBriefIds(adName),
         });

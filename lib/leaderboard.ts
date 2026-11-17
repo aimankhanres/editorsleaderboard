@@ -4,6 +4,7 @@ import type {
   AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard,
 } from './types';
 import { TEAMS, type Team } from './teams';
+import { snapPrefix, viewChannels, type ChannelView } from './channels';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
   briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }> };
@@ -172,24 +173,25 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
 }
 
 /** Full payload for one month, read straight from Postgres (or demo data without a DB). */
-export async function buildLeaderboard(month: string): Promise<LeaderboardPayload> {
+export async function buildLeaderboard(month: string, view: ChannelView = 'meta'): Promise<LeaderboardPayload> {
   if (!cfg.hasDb) {
     const { demoLeaderboard } = await import('./demo');
-    return demoLeaderboard(month);
+    return demoLeaderboard(month, view);
   }
   const store = await import('./store');
   const [ads, roster, months, last, prev, prevSpend] = await Promise.all([
-    store.loadMonthAds(month),
+    store.loadMonthAds(month, viewChannels(view)),
     store.loadRoster(),
     store.monthsAvailable(),
     store.lastSync(),
-    store.previousRanks(month, todayIn(cfg.timezone)),
-    store.previousSpends(month, todayIn(cfg.timezone)),
+    store.previousRanks(month, todayIn(cfg.timezone), snapPrefix(view)),
+    store.previousSpends(month, todayIn(cfg.timezone), snapPrefix(view)),
   ]);
   const briefMap = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]);
   const alloc = allocate(ads, briefMap, roster);
   return {
     month,
+    channel: view,
     months: months.includes(month) ? months : [month, ...months].sort().reverse(),
     total: alloc.total,
     attributed: alloc.attributed,

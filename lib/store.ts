@@ -53,7 +53,8 @@ export async function upsertAdSpend(rows: AdDayRow[]): Promise<void> {
 }
 
 /** All ads with spend in the month, summed across days. Name/brief IDs come from the latest day. */
-export async function loadMonthAds(month: string): Promise<AdAgg[]> {
+/** Ads with spend this month, optionally limited to some Triple Whale channels (null = all). */
+export async function loadMonthAds(month: string, channels: string[] | null = null): Promise<AdAgg[]> {
   const rows = await q<{ ad_id: string; ad_name: string; campaign: string | null; spend: string; brief_ids: string[] }>(
     `SELECT ad_id,
             (array_agg(ad_name   ORDER BY spend_date DESC))[1] AS ad_name,
@@ -62,9 +63,10 @@ export async function loadMonthAds(month: string): Promise<AdAgg[]> {
             SUM(spend) AS spend
        FROM ad_spend
       WHERE spend_date >= $1::date AND spend_date < $2::date
+        AND ($3::text[] IS NULL OR channel = ANY($3::text[]))
       GROUP BY ad_id
      HAVING SUM(spend) <> 0`,
-    [monthStart(month), monthStart(nextMonth(month))],
+    [monthStart(month), monthStart(nextMonth(month)), channels],
   );
   return rows.map(r => ({
     adId: r.ad_id,
@@ -203,8 +205,14 @@ export async function loadRoster(): Promise<Map<string, RosterEntry>> {
 
 // ---------------------------------------------------------------- snapshots
 
-export async function writeSnapshot(snapDate: string, month: string, rows: { key: string; spend: number; rank: number }[]) {
-  await q(`DELETE FROM snapshots WHERE snap_date = $1::date AND month = $2`, [snapDate, month]);
+/** Replace today's snapshot for one channel view. `prefix` is snapPrefix(view): '' for Meta, 'google|', 'all|'. */
+export async function writeSnapshot(snapDate: string, month: string, rows: { key: string; spend: number; rank: number }[], prefix = '') {
+  await q(
+    `DELETE FROM snapshots WHERE snap_date = $1::date AND month = $2
+       AND (CASE WHEN $3 = '' THEN position('|' in editor_key) = 0 ELSE starts_with(editor_key, $3) END)`,
+    [snapDate, month, prefix],
+  );
+  rows = rows.map(r => ({ ...r, key: prefix + r.key }));
   for (const part of chunks(rows)) {
     await q(
       `INSERT INTO snapshots (snap_date, month, editor_key, spend, rank)
@@ -215,25 +223,27 @@ export async function writeSnapshot(snapDate: string, month: string, rows: { key
 }
 
 /** Spend per editor from the most recent snapshot taken before `today` for this month */
-export async function previousSpends(month: string, today: string): Promise<Map<string, number>> {
+export async function previousSpends(month: string, today: string, prefix = ''): Promise<Map<string, number>> {
   const rows = await q<{ editor_key: string; spend: string }>(
-    `SELECT editor_key, spend FROM snapshots
-      WHERE month = $1 AND snap_date = (
-        SELECT MAX(snap_date) FROM snapshots WHERE month = $1 AND snap_date < $2::date)`,
-    [month, today],
+    `WITH mine AS (
+       SELECT * FROM snapshots WHERE month = $1 AND snap_date < $2::date
+          AND (CASE WHEN $3 = '' THEN position('|' in editor_key) = 0 ELSE starts_with(editor_key, $3) END))
+     SELECT editor_key, spend FROM mine WHERE snap_date = (SELECT MAX(snap_date) FROM mine)`,
+    [month, today, prefix],
   );
-  return new Map(rows.map(r => [r.editor_key, Number(r.spend)]));
+  return new Map(rows.map(r => [r.editor_key.slice(prefix.length), Number(r.spend)]));
 }
 
 /** Ranks from the most recent snapshot taken before `today` for this month */
-export async function previousRanks(month: string, today: string): Promise<Map<string, number>> {
+export async function previousRanks(month: string, today: string, prefix = ''): Promise<Map<string, number>> {
   const rows = await q<{ editor_key: string; rank: number }>(
-    `SELECT editor_key, rank FROM snapshots
-      WHERE month = $1 AND snap_date = (
-        SELECT MAX(snap_date) FROM snapshots WHERE month = $1 AND snap_date < $2::date)`,
-    [month, today],
+    `WITH mine AS (
+       SELECT * FROM snapshots WHERE month = $1 AND snap_date < $2::date
+          AND (CASE WHEN $3 = '' THEN position('|' in editor_key) = 0 ELSE starts_with(editor_key, $3) END))
+     SELECT editor_key, rank FROM mine WHERE snap_date = (SELECT MAX(snap_date) FROM mine)`,
+    [month, today, prefix],
   );
-  return new Map(rows.map(r => [r.editor_key, r.rank]));
+  return new Map(rows.map(r => [r.editor_key.slice(prefix.length), r.rank]));
 }
 
 // ---------------------------------------------------------------- sync_runs
