@@ -29,6 +29,16 @@ export type EditorRow = {
   briefs: EditorBrief[];
   rank: number;
   prevRank: number | null;
+  role?: string;
+};
+
+export type TeamBoard = {
+  id: string;
+  name: string;
+  /** Spend credited to this team's members */
+  spend: number;
+  /** Members ranked by spend; members with no spend yet come last with spend 0 */
+  editors: EditorRow[];
 };
 
 export type ReviewKind = 'no_brief_id' | 'pending' | 'task_not_found' | 'other_workspace' | 'no_editor' | 'name_mismatch';
@@ -49,6 +59,7 @@ export type LeaderboardPayload = {
   total: number;
   attributed: number;
   editors: EditorRow[];
+  teams: TeamBoard[];
   review: ReviewItem[];
   lastSync: { at: string; ok: boolean; error?: string | null } | null;
   splitMode: 'split' | 'joint';

@@ -1,8 +1,9 @@
 import { cfg } from './config';
 import { todayIn } from './dates';
 import type {
-  AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry,
+  AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard,
 } from './types';
+import { TEAMS, type Team } from './teams';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
   briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }> };
@@ -137,6 +138,39 @@ export function rank(editors: Allocation['editors'], prev: Map<string, number>):
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * One board per team (lib/teams.ts). Only listed members appear; members without spend get a $0 row.
+ * Ranks and rank changes are within the team: yesterday's rank comes from re-ranking yesterday's
+ * snapshot spends among the same members.
+ */
+export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string, number>, teams: Team[] = TEAMS): TeamBoard[] {
+  const byKey = new Map(editors.map(e => [e.key, e]));
+  return teams.map(team => {
+    const rows = team.members.map(m => {
+      const key = `u:${m.id}`;
+      const e = byKey.get(key);
+      return {
+        key, name: m.name, role: m.role, avatar: e?.avatar ?? null, active: true,
+        spend: e?.spend ?? 0, ads: e?.ads ?? 0, briefs: e?.briefs ?? [], share: 0,
+      };
+    });
+    rows.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+    const spend = rows.reduce((s, r) => s + r.spend, 0);
+    const prevOrder = team.members
+      .map(m => ({ key: `u:${m.id}`, spend: prevSpend.get(`u:${m.id}`) ?? 0 }))
+      .filter(r => r.spend > 0)
+      .sort((a, b) => b.spend - a.spend);
+    const prevRank = new Map(prevOrder.map((r, i) => [r.key, i + 1]));
+    return {
+      id: team.id, name: team.name, spend: round2(spend),
+      editors: rows.map((r, i) => ({
+        ...r, share: spend ? r.spend / spend : 0, rank: i + 1,
+        prevRank: r.spend > 0 ? prevRank.get(r.key) ?? null : null,
+      })),
+    };
+  });
+}
+
 /** Full payload for one month, read straight from Postgres (or demo data without a DB). */
 export async function buildLeaderboard(month: string): Promise<LeaderboardPayload> {
   if (!cfg.hasDb) {
@@ -144,12 +178,13 @@ export async function buildLeaderboard(month: string): Promise<LeaderboardPayloa
     return demoLeaderboard(month);
   }
   const store = await import('./store');
-  const [ads, roster, months, last, prev] = await Promise.all([
+  const [ads, roster, months, last, prev, prevSpend] = await Promise.all([
     store.loadMonthAds(month),
     store.loadRoster(),
     store.monthsAvailable(),
     store.lastSync(),
     store.previousRanks(month, todayIn(cfg.timezone)),
+    store.previousSpends(month, todayIn(cfg.timezone)),
   ]);
   const briefMap = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]);
   const alloc = allocate(ads, briefMap, roster);
@@ -159,6 +194,7 @@ export async function buildLeaderboard(month: string): Promise<LeaderboardPayloa
     total: alloc.total,
     attributed: alloc.attributed,
     editors: rank(alloc.editors, prev),
+    teams: buildTeams(alloc.editors, prevSpend),
     review: alloc.review,
     lastSync: last,
     splitMode: cfg.splitMode,

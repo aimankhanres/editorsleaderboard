@@ -214,6 +214,17 @@ export async function writeSnapshot(snapDate: string, month: string, rows: { key
   }
 }
 
+/** Spend per editor from the most recent snapshot taken before `today` for this month */
+export async function previousSpends(month: string, today: string): Promise<Map<string, number>> {
+  const rows = await q<{ editor_key: string; spend: string }>(
+    `SELECT editor_key, spend FROM snapshots
+      WHERE month = $1 AND snap_date = (
+        SELECT MAX(snap_date) FROM snapshots WHERE month = $1 AND snap_date < $2::date)`,
+    [month, today],
+  );
+  return new Map(rows.map(r => [r.editor_key, Number(r.spend)]));
+}
+
 /** Ranks from the most recent snapshot taken before `today` for this month */
 export async function previousRanks(month: string, today: string): Promise<Map<string, number>> {
   const rows = await q<{ editor_key: string; rank: number }>(

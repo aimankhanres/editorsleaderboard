@@ -30,6 +30,14 @@ Details:
   the ClickUp custom task ID or stored in a custom field, and what type the Editor field is
   (people / dropdown / text). Handle all three types.
 
+## Teams (what the dashboard shows)
+
+- Two boards, **Resizing** and **Iterations**, defined in `lib/teams.ts` by ClickUp user id. Only listed
+  people appear; members with no spend this month are listed under "No spend yet". Ranks and rank changes
+  are within each team (`buildTeams`). Attribution itself is unchanged: an editor's spend is everything
+  credited to them via the Editor field, whatever the task type.
+- To add/move someone, edit `lib/teams.ts` and push.
+
 ## Stack
 
 - Next.js 14 (App Router, TypeScript) deployed on Vercel from GitHub (`main` = production).

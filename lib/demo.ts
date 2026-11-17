@@ -2,14 +2,12 @@
 import { cfg } from './config';
 import { extractBriefIds } from './briefs';
 import { monthOf, prevMonth, todayIn } from './dates';
-import { allocate, rank } from './leaderboard';
+import { allocate, buildTeams, rank } from './leaderboard';
+import { TEAMS } from './teams';
 import type { AdAgg, BriefInfo, LeaderboardPayload, RosterEntry } from './types';
 
-const EDITORS = [
-  'Nora Quill', 'Theo Marsh', 'Ivy Calder', 'Felix Rowan', 'Maya Torres', 'Owen Pike', 'Lena Brooks',
-  'Ravi Stone', 'Zara Finch', 'Caleb Wren', 'Juno Hart', 'Milo Grant',
-];
-const LEFT = new Set(['Owen Pike']);
+// Demo uses the real team rosters (so both boards fill) with random numbers. Local preview only.
+const MEMBERS = TEAMS.flatMap(t => t.members);
 
 function rng(seed: number) {
   return () => {
@@ -21,13 +19,13 @@ function rng(seed: number) {
 export function demoLeaderboard(month: string): LeaderboardPayload {
   const rand = rng(Number(month.replace('-', '')));
   const roster = new Map<string, RosterEntry>(
-    EDITORS.map((n, i) => [`u:${1000 + i}`, { name: n, avatar: null, active: !LEFT.has(n) }]),
+    MEMBERS.map(m => [`u:${m.id}`, { name: m.name, avatar: null, active: true }]),
   );
   const keys = [...roster.keys()];
   const briefs = new Map<string, BriefInfo>();
   const ads: AdAgg[] = [];
 
-  for (let b = 0; b < 70; b++) {
+  for (let b = 0; b < 160; b++) {
     const briefId = `OO-${18000 + Math.floor(rand() * 7000)}`;
     const r = rand();
     const ed = r < 0.85 ? [keys[Math.floor(Math.pow(rand(), 1.6) * keys.length)]]
@@ -62,6 +60,7 @@ export function demoLeaderboard(month: string): LeaderboardPayload {
   const noisy = new Map(alloc.editors.map(e => [e.key, e.spend * (0.75 + rand() * 0.5)]));
   const prevOrder = [...alloc.editors].sort((a, b) => noisy.get(b.key)! - noisy.get(a.key)!);
   const prev = new Map(prevOrder.map((e, i) => [e.key, i + 1]));
+  const teams = buildTeams(alloc.editors, noisy);
   prev.delete(prevOrder[prevOrder.length - 1]?.key); // one "new" entry
 
   const current = monthOf(todayIn(cfg.timezone));
@@ -71,6 +70,7 @@ export function demoLeaderboard(month: string): LeaderboardPayload {
     total: alloc.total,
     attributed: alloc.attributed,
     editors: rank(alloc.editors, prev),
+    teams,
     review: alloc.review,
     lastSync: { at: new Date(Date.now() - 4 * 60_000).toISOString(), ok: true, error: null },
     splitMode: cfg.splitMode,

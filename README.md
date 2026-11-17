@@ -72,6 +72,11 @@ open dashboard. Google sign-in for the company domain is not built yet.
 - Brief IDs are `OO-`, `AOG-` and `CIN-` followed by digits. References glued to another letter, such as `rOO-12345`,
   `rCIN-…` or `iCIN-…` (resize / iteration of an original brief), are not counted as brief IDs.
 
+## Teams
+
+The dashboard shows two boards, **Resizing** and **Iterations**. Who is on each is set in `lib/teams.ts`
+(ClickUp user id, display name, role). Edit that file and push to change the lists.
+
 ## Editors who leave
 
 Editors are added to the `editors` table automatically. To tag someone "No longer with us":
@@ -88,7 +93,8 @@ UPDATE editors SET active = false WHERE name = 'Full Name';
 | --- | --- |
 | `lib/triplewhale.ts` | Triple Whale SQL API → ad-level daily spend (`ads_table`, channel `facebook-ads`) |
 | `lib/clickup.ts` | Brief ID → task lookup, Editor field parsing (users / dropdown / labels / text), throttling |
-| `lib/leaderboard.ts` | `allocate()` (pure attribution) and `buildLeaderboard(month)` |
+| `lib/leaderboard.ts` | `allocate()` (pure attribution), `buildTeams()`, `buildLeaderboard(month)` |
+| `lib/teams.ts` | Resizing and Iterations rosters (ClickUp user ids, names, roles) |
 | `lib/store.ts` | All Postgres queries |
 | `lib/demo.ts` | Demo data when there is no database |
 | `app/api/sync` | Cron job: fetch spend, look up briefs, write snapshots |
