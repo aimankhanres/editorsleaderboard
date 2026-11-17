@@ -45,11 +45,11 @@ Details:
   with a `g:` prefix. The UI has a Meta / Google / All switch (`/api/leaderboard?channel=`); Meta is the default.
 - Snapshots are per view: Meta uses the plain editor key, others are prefixed (`google|u:1`, `all|u:1`).
 
-## Winners
+## Winner ads
 
-- A winner is a **brief** whose ads together (all copies, full spend before splitting between editors)
-  reach `WINNER_SPEND` (default 40000 USD) in the selected period/channel. It counts for every editor credited
-  on that brief, and once per team. Computed in `allocate()` (`briefTotals`).
+- An ad is a winner when that single ad's spend in the selected period/channel is >= `WINNER_SPEND` (default
+  40000 USD). It counts for every editor credited on it (shared ads count for each) and once per team.
+  Computed in `allocate()`. The expanded row lists winner ads above the full brief list (stacked, one column).
 
 ## Custom date ranges
 
