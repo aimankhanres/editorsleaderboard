@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
-import { diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
+import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { clickupCheck, lookupBriefs } from '@/lib/clickup';
-import { allocate } from '@/lib/leaderboard';
+import { extractBriefIds } from '@/lib/briefs';
+import { allocate, buildTeams } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,42 @@ export async function GET(req: Request) {
 
   // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
   if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck('AOG-10150'));
+  // ?diag=channel&channel=google-ads : read-only check of how much of another channel's spend is traceable
+  // to briefs/editors, using the brief lookups we already have. Writes nothing.
+  if (url.searchParams.get('diag') === 'channel') {
+    const channel = url.searchParams.get('channel') || 'google-ads';
+    const ads = (await adTotals(channel, from, today)).map(a => ({ ...a, campaign: a.campaign ?? '', briefIds: extractBriefIds(a.adName) }));
+    const sum = (xs: { spend: number }[]) => Math.round(xs.reduce((s, x) => s + x.spend, 0));
+    const withBrief = ads.filter(a => a.briefIds.length);
+    const byType = new Map<string, { ads: number; spend: number; withBrief: number }>();
+    for (const a of ads) {
+      const k = a.campaignType || '(none)';
+      const t = byType.get(k) ?? { ads: 0, spend: 0, withBrief: 0 };
+      t.ads++; t.spend += a.spend; if (a.briefIds.length) t.withBrief += a.spend;
+      byType.set(k, t);
+    }
+    const briefIds = [...new Set(withBrief.flatMap(a => a.briefIds))];
+    const briefMap = cfg.hasDb ? await store.loadBriefMap(briefIds) : new Map();
+    const roster = cfg.hasDb ? await store.loadRoster() : new Map();
+    const alloc = allocate(ads, briefMap, roster);
+    const kinds = new Map<string, number>();
+    for (const r of alloc.review) kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + r.spend);
+    const teams = buildTeams(alloc.editors, new Map()).map(t => ({
+      team: t.name, spend: Math.round(t.spend), withSpend: t.editors.filter(e => e.spend > 0).length,
+      top: t.editors.filter(e => e.spend > 0).slice(0, 5).map(e => `${e.name} $${Math.round(e.spend)}`),
+    }));
+    return NextResponse.json({
+      channel, from, to: today, ads: ads.length, total: sum(ads), withBriefId: sum(withBrief),
+      briefs: briefIds.length, briefsAlreadyLookedUp: briefMap.size,
+      creditedToEditors: Math.round(alloc.attributed),
+      notCredited: Object.fromEntries([...kinds].map(([k, v]) => [k, Math.round(v)])),
+      byCampaignType: Object.fromEntries([...byType].map(([k, v]) => [k, { ads: v.ads, spend: Math.round(v.spend), withBriefId: Math.round(v.withBrief) }])),
+      teams,
+      topNoBrief: ads.filter(a => !a.briefIds.length).sort((a, b) => b.spend - a.spend).slice(0, 8)
+        .map(a => `${Math.round(a.spend)} | ${a.campaignType ?? ''} | ${a.adName.slice(0, 70)} | ${(a.campaign ?? '').slice(0, 40)}`),
+      sampleWithBrief: [...withBrief].sort((a, b) => b.spend - a.spend).slice(0, 6).map(a => `${Math.round(a.spend)} | ${a.adName.slice(0, 80)}`),
+    });
+  }
   if (url.searchParams.get('diag')) return NextResponse.json(await diagnose(from, today));
 
   // ?dry=1 : fetch spend only, write nothing. Use it to check Triple Whale numbers against Ads Manager.

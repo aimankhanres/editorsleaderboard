@@ -149,3 +149,29 @@ export async function diagnose(from: string, to: string): Promise<Record<string,
   for (const [k, q] of Object.entries(variants)) out[k] = await tryQuery(from, to, q);
   return out;
 }
+
+type AdTotalRow = { ad: string; name: string | null; campaign: string | null; ctype: string | null; total_spend: number | string | null };
+
+/**
+ * Diagnostics (read-only): spend per ad for any channel over [from, to], paged. Used to check whether
+ * another channel (e.g. google-ads) has brief IDs in its ad names before adding it to the leaderboard.
+ */
+export async function adTotals(channel: string, from: string, to: string) {
+  const out: { adId: string; adName: string; campaign: string | null; campaignType: string | null; spend: number }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await runQuery<AdTotalRow>(from, to, `
+SELECT toString(a.ad_id) AS ad, any(a.ad_name) AS name, any(a.campaign_name) AS campaign,
+       any(a.campaign_type) AS ctype, SUM(a.spend) AS total_spend
+FROM ads_table a
+WHERE a.event_date BETWEEN @startDate AND @endDate AND a.channel = ${sqlString(channel)}
+GROUP BY a.ad_id
+HAVING SUM(a.spend) != 0
+ORDER BY ad
+LIMIT ${PAGE} OFFSET ${offset}`);
+    for (const r of rows) {
+      out.push({ adId: String(r.ad), adName: r.name ?? '', campaign: r.campaign, campaignType: r.ctype, spend: Number(r.total_spend ?? 0) || 0 });
+    }
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
