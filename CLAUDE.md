@@ -45,6 +45,12 @@ Details:
   with a `g:` prefix. The UI has a Meta / Google / All switch (`/api/leaderboard?channel=`); Meta is the default.
 - Snapshots are per view: Meta uses the plain editor key, others are prefixed (`google|u:1`, `all|u:1`).
 
+## Custom date ranges
+
+- `/api/leaderboard?from=YYYY-MM-DD&to=YYYY-MM-DD` (inclusive) sums spend over exactly those days
+  (`store.loadAds`). Rank changes are hidden for custom ranges. The UI has a "Custom…" date picker with presets.
+  Only days already synced are available (`dataFrom`/`dataTo` in the payload).
+
 ## Stack
 
 - Next.js 14 (App Router, TypeScript) deployed on Vercel from GitHub (`main` = production).

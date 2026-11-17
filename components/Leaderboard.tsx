@@ -34,6 +34,8 @@ export default function Leaderboard() {
     setChannelState(c);
     try { localStorage.setItem('channel', c); } catch { /* storage unavailable */ }
   };
+  const [range, setRange] = useState<{ from: string; to: string } | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
   const [, tick] = useState(0);
 
   const setView = (v: View) => {
@@ -41,10 +43,10 @@ export default function Leaderboard() {
     if (typeof window !== 'undefined') history.replaceState(null, '', `#${v}`);
   };
 
-  const load = useCallback(async (m: string | null, ch: ChannelView) => {
+  const load = useCallback(async (m: string | null, ch: ChannelView, r: { from: string; to: string } | null) => {
     try {
       const qs = new URLSearchParams({ channel: ch });
-      if (m) qs.set('month', m);
+      if (r) { qs.set('from', r.from); qs.set('to', r.to); } else if (m) qs.set('month', m);
       const res = await fetch(`/api/leaderboard?${qs}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
@@ -56,10 +58,10 @@ export default function Leaderboard() {
   }, []);
 
   useEffect(() => {
-    load(month, channel);
-    const id = setInterval(() => { if (!document.hidden) load(month, channel); }, POLL_MS);
+    load(month, channel, range);
+    const id = setInterval(() => { if (!document.hidden) load(month, channel, range); }, POLL_MS);
     return () => clearInterval(id);
-  }, [month, channel, load]);
+  }, [month, channel, range, load]);
 
   useEffect(() => { const id = setInterval(() => tick(t => t + 1), 30_000); return () => clearInterval(id); }, []);
   useEffect(() => {
@@ -72,7 +74,10 @@ export default function Leaderboard() {
   const team = teams.find(t => t.id === current) ?? null;
   const reviewCount = data?.review.length ?? 0;
   const label = viewLabel(data?.channel ?? channel);
-  const stale = data != null && data.channel !== channel;
+  const stale = data != null && (data.channel !== channel
+    || (range ? data.range?.from !== range.from || data.range?.to !== range.to : data.range != null));
+  const period = data?.range ? `${fmtDate(data.range.from)} – ${fmtDate(data.range.to)}` : null;
+  const pickMonth = (m: string) => { setRange(null); setCustomOpen(false); setMonth(m); };
 
   return (
     <main className="wrap">
@@ -111,24 +116,40 @@ export default function Leaderboard() {
         </nav>
         <nav className="months" aria-label="Month">
           {(data?.months ?? []).map(m => (
-            <button key={m} className={m === data?.month ? 'on' : ''} onClick={() => setMonth(m)}>{monthLabel(m)}</button>
+            <button key={m} className={!range && m === data?.month ? 'on' : ''} onClick={() => pickMonth(m)}>{monthLabel(m)}</button>
           ))}
+          <button className={range || customOpen ? 'on' : ''} onClick={() => setCustomOpen(o => !o)} aria-expanded={customOpen}>
+            {range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : 'Custom…'}
+          </button>
         </nav>
         </div>
       </div>
+
+      {customOpen && (
+        <RangePicker
+          initial={range ?? data?.range ?? null}
+          min={data?.dataFrom ?? undefined}
+          max={data?.dataTo ?? undefined}
+          onApply={r => { setRange(r); setCustomOpen(false); }}
+          onClear={() => { setRange(null); setCustomOpen(false); }}
+          active={range != null}
+        />
+      )}
+      {period && <div className="period">Showing <strong>{period}</strong> · rank changes are hidden for custom ranges</div>}
 
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
 
       <div className={stale ? 'loading' : ''}>
-        {data && team && <TeamView key={`${team.id}-${data.month}-${data.channel}`} team={team} total={data.total} label={label} />}
+        {data && team && <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`} team={team} total={data.total} label={label} custom={data.range != null} />}
         {data && current === 'review' && <ReviewView data={data} label={label} />}
       </div>
     </main>
   );
 }
 
-function TeamView({ team, total, label }: { team: TeamBoard; total: number; label: string }) {
+function TeamView({ team, total, label, custom }: { team: TeamBoard; total: number; label: string; custom: boolean }) {
+  const when = custom ? 'in this period' : 'this month';
   const [query, setQuery] = useState('');
   const [showIdle, setShowIdle] = useState(false);
   const withSpend = team.editors.filter(e => e.spend > 0);
@@ -142,24 +163,24 @@ function TeamView({ team, total, label }: { team: TeamBoard; total: number; labe
       <section className="stats">
         <Stat label={`${team.name} team spend`} value={money(team.spend)} sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
         <Stat label="Top editor" value={withSpend[0] ? money(withSpend[0].spend) : '—'} sub={withSpend[0]?.name ?? 'No spend yet'} />
-        <Stat label="Editors with spend" value={`${withSpend.length} / ${team.editors.length}`} sub={idle.length ? `${idle.length} with no spend yet` : 'Everyone has spend'} />
+        <Stat label="Editors with spend" value={`${withSpend.length} / ${team.editors.length}`} sub={idle.length ? `${idle.length} with no spend ${when}` : 'Everyone has spend'} />
         <Stat label="Briefs with spend" value={String(briefs)} sub={withSpend.length ? `avg ${money(team.spend / withSpend.length)} per editor` : undefined} />
       </section>
 
-      {!withSpend.length && <div className="empty">No spend credited to the {team.name} team yet this month.</div>}
-      {withSpend.length > 0 && !q && <Podium editors={withSpend.slice(0, 3)} />}
+      {!withSpend.length && <div className="empty">No spend credited to the {team.name} team {when}.</div>}
+      {withSpend.length > 0 && !q && <Podium editors={withSpend.slice(0, 3)} moves={!custom} />}
 
       <div className="list-head">
         <h2>{team.name} ranking</h2>
         <input className="search" type="search" placeholder="Search editor or role" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
       </div>
-      <Rows editors={withSpend.filter(match)} top={withSpend[0]?.spend ?? 0} />
+      <Rows editors={withSpend.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom} />
       {q && !withSpend.some(match) && !idle.some(match) && <div className="empty small">Nobody matches “{query}”.</div>}
 
       {idle.length > 0 && (
         <section className="idle">
           <button className="idle-toggle" onClick={() => setShowIdle(s => !s)} aria-expanded={showIdle || !!q}>
-            {showIdle || q ? '▾' : '▸'} No spend yet this month <span className="count">{idle.length}</span>
+            {showIdle || q ? '▾' : '▸'} No spend {when} <span className="count">{idle.length}</span>
           </button>
           {(showIdle || q) && (
             <ul className="idle-list">
@@ -214,7 +235,7 @@ function Move({ e }: { e: EditorRow }) {
   return <span className="move same" title="No change">–</span>;
 }
 
-function Podium({ editors }: { editors: EditorRow[] }) {
+function Podium({ editors, moves }: { editors: EditorRow[]; moves: boolean }) {
   const order = [editors[1], editors[0], editors[2]].filter(Boolean) as EditorRow[];
   return (
     <section className="podium">
@@ -225,7 +246,7 @@ function Podium({ editors }: { editors: EditorRow[] }) {
           <div className="p-name">{e.name}</div>
           <div className="p-role">{e.role}</div>
           <div className="p-spend">{money(e.spend)}</div>
-          <div className="p-meta">{e.briefs.length} briefs · {e.ads} ads · <Move e={e} /></div>
+          <div className="p-meta">{e.briefs.length} briefs · {e.ads} ads{moves && <> · <Move e={e} /></>}</div>
           <div className="block" />
         </div>
       ))}
@@ -233,7 +254,7 @@ function Podium({ editors }: { editors: EditorRow[] }) {
   );
 }
 
-function Rows({ editors, top }: { editors: EditorRow[]; top: number }) {
+function Rows({ editors, top, moves }: { editors: EditorRow[]; top: number; moves: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!editors.length) return null;
   return (
@@ -244,7 +265,7 @@ function Rows({ editors, top }: { editors: EditorRow[]; top: number }) {
           <li key={e.key} className={`row ${isOpen ? 'open' : ''} ${e.rank <= 3 ? `top t${e.rank}` : ''}`}>
             <button className="row-main" onClick={() => setOpen(isOpen ? null : e.key)} aria-expanded={isOpen}>
               <span className="rank">{e.rank}</span>
-              <Move e={e} />
+              {moves ? <Move e={e} /> : <span />}
               <Avatar name={e.name} src={e.avatar} size={36} />
               <span className="who">
                 <span className="name">{e.name}</span>
@@ -325,5 +346,42 @@ function Review({ items }: { items: ReviewItem[] }) {
         );
       })}
     </div>
+  );
+}
+
+const fmtDate = (ymd: string) =>
+  new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+function RangePicker({ initial, min, max, onApply, onClear, active }: {
+  initial: { from: string; to: string } | null; min?: string; max?: string; active: boolean;
+  onApply: (r: { from: string; to: string }) => void; onClear: () => void;
+}) {
+  const last = max ?? new Date().toISOString().slice(0, 10);
+  const shift = (ymd: string, n: number) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const clamp = (ymd: string) => (min && ymd < min ? min : ymd);
+  const [from, setFrom] = useState(initial?.from ?? clamp(shift(last, -6)));
+  const [to, setTo] = useState(initial?.to ?? last);
+  const valid = !!from && !!to && from <= to;
+  const presets: { label: string; from: string; to: string }[] = [
+    { label: 'Today', from: last, to: last },
+    { label: 'Yesterday', from: shift(last, -1), to: shift(last, -1) },
+    { label: 'Last 7 days', from: clamp(shift(last, -6)), to: last },
+    { label: 'Last 14 days', from: clamp(shift(last, -13)), to: last },
+  ];
+  return (
+    <section className="range" aria-label="Custom date range">
+      <div className="range-fields">
+        <label>From<input type="date" value={from} min={min} max={to || max} onChange={e => setFrom(e.target.value)} /></label>
+        <label>To<input type="date" value={to} min={from || min} max={max} onChange={e => setTo(e.target.value)} /></label>
+        <button className="apply" disabled={!valid} onClick={() => valid && onApply({ from, to })}>Apply</button>
+        {active && <button className="ghost" onClick={onClear}>Back to month</button>}
+      </div>
+      <div className="presets">
+        {presets.map(p => (
+          <button key={p.label} onClick={() => { setFrom(p.from); setTo(p.to); onApply({ from: p.from, to: p.to }); }}>{p.label}</button>
+        ))}
+      </div>
+      {min && <p className="hint">Data available from {fmtDate(min)}{max ? ` to ${fmtDate(max)}` : ''}.</p>}
+    </section>
   );
 }

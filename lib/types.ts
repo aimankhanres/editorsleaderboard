@@ -57,6 +57,11 @@ export type LeaderboardPayload = {
   month: string;
   /** Which ad channels the numbers cover: meta, google or all */
   channel: 'meta' | 'google' | 'all';
+  /** Custom inclusive date range; null = the whole `month` */
+  range: { from: string; to: string } | null;
+  /** First / last day with stored spend */
+  dataFrom: string | null;
+  dataTo: string | null;
   months: string[];
   total: number;
   attributed: number;

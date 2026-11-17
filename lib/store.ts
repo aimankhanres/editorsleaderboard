@@ -52,9 +52,16 @@ export async function upsertAdSpend(rows: AdDayRow[]): Promise<void> {
   }
 }
 
-/** All ads with spend in the month, summed across days. Name/brief IDs come from the latest day. */
-/** Ads with spend this month, optionally limited to some Triple Whale channels (null = all). */
-export async function loadMonthAds(month: string, channels: string[] | null = null): Promise<AdAgg[]> {
+/** Ads with spend in the month, optionally limited to some Triple Whale channels (null = all). */
+export function loadMonthAds(month: string, channels: string[] | null = null): Promise<AdAgg[]> {
+  return loadAds(monthStart(month), monthStart(nextMonth(month)), channels);
+}
+
+/**
+ * Ads with spend in [from, toExclusive), summed across days. Name/brief IDs come from the latest day.
+ * Optionally limited to some Triple Whale channels (null = all).
+ */
+export async function loadAds(from: string, toExclusive: string, channels: string[] | null = null): Promise<AdAgg[]> {
   const rows = await q<{ ad_id: string; ad_name: string; campaign: string | null; spend: string; brief_ids: string[] }>(
     `SELECT ad_id,
             (array_agg(ad_name   ORDER BY spend_date DESC))[1] AS ad_name,
@@ -66,7 +73,7 @@ export async function loadMonthAds(month: string, channels: string[] | null = nu
         AND ($3::text[] IS NULL OR channel = ANY($3::text[]))
       GROUP BY ad_id
      HAVING SUM(spend) <> 0`,
-    [monthStart(month), monthStart(nextMonth(month)), channels],
+    [from, toExclusive, channels],
   );
   return rows.map(r => ({
     adId: r.ad_id,
@@ -75,6 +82,14 @@ export async function loadMonthAds(month: string, channels: string[] | null = nu
     spend: Number(r.spend),
     briefIds: Array.isArray(r.brief_ids) ? r.brief_ids : [],
   }));
+}
+
+/** First and last day with stored spend (custom ranges can only cover this span) */
+export async function dataSpan(): Promise<{ from: string | null; to: string | null }> {
+  const rows = await q<{ a: string | null; b: string | null }>(
+    `SELECT to_char(MIN(spend_date), 'YYYY-MM-DD') AS a, to_char(MAX(spend_date), 'YYYY-MM-DD') AS b FROM ad_spend`,
+  );
+  return { from: rows[0]?.a ?? null, to: rows[0]?.b ?? null };
 }
 
 export async function monthsAvailable(): Promise<string[]> {

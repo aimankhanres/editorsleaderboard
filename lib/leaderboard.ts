@@ -1,5 +1,5 @@
 import { cfg } from './config';
-import { todayIn } from './dates';
+import { addDays, todayIn } from './dates';
 import type {
   AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard,
 } from './types';
@@ -173,25 +173,34 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
 }
 
 /** Full payload for one month, read straight from Postgres (or demo data without a DB). */
-export async function buildLeaderboard(month: string, view: ChannelView = 'meta'): Promise<LeaderboardPayload> {
+/**
+ * `range` (inclusive dates) replaces the month: spend is summed over exactly those days, and rank
+ * changes are not shown (there is no "yesterday" for an arbitrary range).
+ */
+export async function buildLeaderboard(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null): Promise<LeaderboardPayload> {
   if (!cfg.hasDb) {
     const { demoLeaderboard } = await import('./demo');
-    return demoLeaderboard(month, view);
+    return { ...demoLeaderboard(month, view), range, dataFrom: null, dataTo: null };
   }
   const store = await import('./store');
-  const [ads, roster, months, last, prev, prevSpend] = await Promise.all([
-    store.loadMonthAds(month, viewChannels(view)),
+  const today = todayIn(cfg.timezone);
+  const [ads, roster, months, last, prev, prevSpend, span] = await Promise.all([
+    range ? store.loadAds(range.from, addDays(range.to, 1), viewChannels(view)) : store.loadMonthAds(month, viewChannels(view)),
     store.loadRoster(),
     store.monthsAvailable(),
     store.lastSync(),
-    store.previousRanks(month, todayIn(cfg.timezone), snapPrefix(view)),
-    store.previousSpends(month, todayIn(cfg.timezone), snapPrefix(view)),
+    range ? new Map<string, number>() : store.previousRanks(month, today, snapPrefix(view)),
+    range ? new Map<string, number>() : store.previousSpends(month, today, snapPrefix(view)),
+    store.dataSpan(),
   ]);
   const briefMap = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]);
   const alloc = allocate(ads, briefMap, roster);
   return {
     month,
     channel: view,
+    range,
+    dataFrom: span.from,
+    dataTo: span.to,
     months: months.includes(month) ? months : [month, ...months].sort().reverse(),
     total: alloc.total,
     attributed: alloc.attributed,

@@ -68,6 +68,9 @@ export function demoLeaderboard(month: string, view: ChannelView = 'meta'): Lead
   return {
     month,
     channel: view,
+    range: null,
+    dataFrom: null,
+    dataTo: null,
     months: [current, prevMonth(current), prevMonth(prevMonth(current))],
     total: alloc.total,
     attributed: alloc.attributed,

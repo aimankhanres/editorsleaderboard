@@ -59,6 +59,19 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); letter-s
 .channels button { padding: 6px 12px; border-radius: 7px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .channels button:hover { color: var(--text); }
 .channels button.on { background: var(--accent); color: #0b0d14; }
+.range { background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 14px 16px; margin: -6px 0 16px; }
+.range-fields { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.range label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.range input[type=date] { background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); border-radius: 9px; padding: 8px 10px; font: inherit; color-scheme: dark; }
+.range .apply { background: var(--accent); color: #0b0d14; font-weight: 700; border-radius: 9px; padding: 9px 16px; }
+.range .apply:disabled { opacity: .4; cursor: not-allowed; }
+.range .ghost { color: var(--muted); padding: 9px 10px; border-radius: 9px; }
+.range .ghost:hover { color: var(--text); background: var(--panel-2); }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.presets button { font-size: 12.5px; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 11px; }
+.presets button:hover { color: var(--text); border-color: var(--accent); }
+.period { margin: -6px 0 14px; color: var(--muted); font-size: 13px; }
+.period strong { color: var(--text); }
 .loading { opacity: .55; transition: opacity .15s; pointer-events: none; }
 .months { display: flex; gap: 4px; overflow-x: auto; max-width: 100%; }
 .months button { padding: 7px 12px; border-radius: 8px; color: var(--muted); border: 1px solid transparent; white-space: nowrap; font-size: 13px; }
