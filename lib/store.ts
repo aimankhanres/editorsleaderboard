@@ -164,7 +164,7 @@ export async function upsertBriefs(infos: BriefInfo[]): Promise<void> {
 export async function requeueOtherWorkspaceBriefs(): Promise<number> {
   const rows = await q<{ n: string }>(
     `WITH u AS (UPDATE brief_map SET status = 'pending', fetched_at = 'epoch'
-       WHERE status = 'not_found' AND brief_id ~ '^[A-Z]+-[0-9]{6,}$' RETURNING 1)
+       WHERE brief_id ~ '^[A-Z]+-[0-9]{6,}$' AND (status = 'not_found' OR task_name LIKE 'Via resize:%') RETURNING 1)
      SELECT COUNT(*) AS n FROM u`,
   );
   return Number(rows[0]?.n ?? 0);

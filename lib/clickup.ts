@@ -124,6 +124,12 @@ async function tasksWithField(fieldId: string, briefId: string): Promise<CuTask[
     .sort((a, b) => Number(a.date_created ?? 0) - Number(b.date_created ?? 0));
 }
 
+/** True when a task name references `briefId` as a resize source: "rAOG-100721", "rAOG_100721", "r AOG 100721". */
+export function isResizeOf(taskName: string, briefId: string): boolean {
+  const [prefix, digits] = briefId.split('-');
+  return new RegExp(`(?:^|[^A-Za-z0-9])r\\s?${prefix}[-_ ]?${digits}(?![0-9])`, 'i').test(taskName);
+}
+
 /** Find the task for one brief ID. Throws RateLimited on 429, Error on other failures. */
 export async function lookupBrief(briefId: string): Promise<BriefInfo> {
   if (!cfg.cu.token || !cfg.cu.teamId) throw new Error('CLICKUP_TOKEN / CLICKUP_TEAM_ID not set');
@@ -134,9 +140,11 @@ export async function lookupBrief(briefId: string): Promise<BriefInfo> {
     if (exact.length) return toInfo(briefId, exact[0]); // several tasks with the same Brief ID: the original (oldest)
 
     // 6-digit briefs are made in another workspace. Credit the editor(s) of the resize tasks in this
-    // workspace that were made from it ("Old Brief Id" = this brief), split evenly if there are several.
+    // workspace that were made from it, split evenly if there are several. "Old Brief Id" = this brief is
+    // also set on iterations (AOG-28788 ...), which have their own brief and ads, so only tasks whose name
+    // carries the resize reference "r<brief>" (16x9_AOG-26331_rAOG-100721_...) count.
     if (isOtherWorkspaceBrief(briefId) && cfg.cu.oldBriefFieldId) {
-      const resizes = await tasksWithField(cfg.cu.oldBriefFieldId, briefId);
+      const resizes = (await tasksWithField(cfg.cu.oldBriefFieldId, briefId)).filter(t => isResizeOf(t.name, briefId));
       if (resizes.length) {
         const editors = new Map<string, EditorRef>();
         for (const t of resizes) for (const e of extractEditors(t)) editors.set(e.key, e);
