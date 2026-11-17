@@ -44,11 +44,17 @@ export function allocate(
   let total = 0;
   let attributed = 0;
 
-  // First names of known editors, for the ad-name cross-check
-  const rosterFirst = new Map<string, string[]>(); // first name -> editor keys
-  for (const [key, r] of roster) {
-    const f = firstName(r.name);
-    if (f.length >= 3) rosterFirst.set(f, [...(rosterFirst.get(f) ?? []), key]);
+  // Ad-name cross-check: only the editors on the team lists (lib/teams.ts). First name, plus a nickname
+  // written in brackets, e.g. "Lucylen (Lucy) Pagado" matches "Lucylen" and "Lucy".
+  const rosterFirst = new Map<string, string[]>(); // name token -> editor keys
+  const watchNames = new Map<string, string>();
+  for (const m of TEAMS.flatMap(t => t.members)) {
+    const key = `u:${m.id}`;
+    watchNames.set(key, m.name);
+    const names = [firstName(m.name.replace(/\(.*?\)/g, ' ')), ...[...m.name.matchAll(/\(([^)]+)\)/g)].map(x => firstName(x[1]))];
+    for (const f of new Set(names)) {
+      if (f.length >= 3 && !(rosterFirst.get(f) ?? []).includes(key)) rosterFirst.set(f, [...(rosterFirst.get(f) ?? []), key]);
+    }
   }
 
   const credit = (ed: EditorRef[], amount: number, ad: AdAgg, info: BriefInfo) => {
@@ -110,8 +116,8 @@ export function allocate(
       const mentioned = new Set<string>();
       for (const t of tokens(ad.adName)) for (const k of rosterFirst.get(t) ?? []) mentioned.add(k);
       if (mentioned.size && ![...mentioned].some(k => creditedKeys.has(k))) {
-        const named = [...mentioned].map(k => roster.get(k)?.name ?? k).join(', ');
-        const credited = [...creditedKeys].map(k => roster.get(k)?.name ?? k).join(', ');
+        const named = [...new Set([...mentioned].map(k => watchNames.get(k) ?? roster.get(k)?.name ?? k))].join(', ');
+        const credited = [...new Set([...creditedKeys].map(k => watchNames.get(k) ?? roster.get(k)?.name ?? k))].join(', ');
         review.push({
           kind: 'name_mismatch', adId: ad.adId, adName: ad.adName, spend: ad.spend,
           briefId: ad.briefIds.join(', '), taskUrl: briefs.get(ad.briefIds[0])?.taskUrl ?? null,

@@ -45,6 +45,11 @@ Details:
   with a `g:` prefix. The UI has a Meta / Google / All switch (`/api/leaderboard?channel=`); Meta is the default.
 - Snapshots are per view: Meta uses the plain editor key, others are prefixed (`google|u:1`, `all|u:1`).
 
+## Ad-name check
+
+- "Ad name mentions a different editor" only looks for people on the team lists (`lib/teams.ts`): first name,
+  plus a bracketed nickname ("Lucylen (Lucy) Pagado"). Informational only; the spend stays credited per ClickUp.
+
 ## Winner ads
 
 - An ad is a winner when that single ad's spend in the selected period/channel is >= `WINNER_SPEND` (default
