@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import { ago, initials, money, monthLabel } from '@/lib/format';
 import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
@@ -43,16 +43,20 @@ export default function Leaderboard() {
     if (typeof window !== 'undefined') history.replaceState(null, '', `#${v}`);
   };
 
+  const seq = useRef(0);
   const load = useCallback(async (m: string | null, ch: ChannelView, r: { from: string; to: string } | null) => {
+    const mine = ++seq.current; // ignore responses that arrive after a newer request
     try {
       const qs = new URLSearchParams({ channel: ch });
       if (r) { qs.set('from', r.from); qs.set('to', r.to); } else if (m) qs.set('month', m);
       const res = await fetch(`/api/leaderboard?${qs}`, { cache: 'no-store' });
       const json = await res.json();
+      if (mine !== seq.current) return;
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setData(json);
       setError(null);
     } catch (e) {
+      if (mine !== seq.current) return;
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
   }, []);
@@ -84,46 +88,54 @@ export default function Leaderboard() {
       <header className="top">
         <div>
           <h1>Editor Leaderboard</h1>
-          <p className="sub">{label === 'All' ? 'Meta + Google' : label} spend on ads built from each editor&apos;s briefs{label !== 'Meta' ? ' (Google: video campaigns only)' : ''}</p>
+          <p className="sub">
+            Ad spend on ads built from each editor&apos;s briefs · <strong>{label === 'All' ? 'Meta + Google' : label}</strong>
+            {label !== 'Meta' ? ' (Google: video campaigns only)' : ''}
+          </p>
         </div>
         <div className="sync">
           {data?.demo && <span className="pill demo">Demo data</span>}
           {data?.lastSync && (
             <span className={`pill ${data.lastSync.ok ? '' : 'bad'}`} title={data.lastSync.error ?? ''}>
               <span className={`dot ${data.lastSync.ok ? 'ok' : 'err'}`} />
-              {data.lastSync.ok ? 'Synced' : 'Sync failed'} {ago(data.lastSync.at)}
+              {data.lastSync.ok ? 'Updated' : 'Sync failed'} {ago(data.lastSync.at)}
             </span>
           )}
         </div>
       </header>
 
-      <div className="bar-row">
-        <nav className="teams" role="tablist" aria-label="Team">
-          {teams.map(t => (
-            <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
-              {t.name} <span className="count">{t.editors.length}</span>
-            </button>
-          ))}
-          <button role="tab" aria-selected={current === 'review'} className={`rv ${current === 'review' ? 'on' : ''}`} onClick={() => setView('review')}>
-            Needs review {reviewCount > 0 && <span className="count warn">{reviewCount}</span>}
+      <nav className="teams" role="tablist" aria-label="Team">
+        {teams.map(t => (
+          <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
+            {t.name} <span className="count">{t.editors.length}</span>
           </button>
-        </nav>
-        <div className="right">
-        <nav className="channels" role="tablist" aria-label="Ad channel">
-          {VIEWS.map(v => (
-            <button key={v.id} role="tab" aria-selected={channel === v.id} className={channel === v.id ? 'on' : ''} onClick={() => setChannel(v.id)}>{v.label}</button>
-          ))}
-        </nav>
-        <nav className="months" aria-label="Month">
-          {(data?.months ?? []).map(m => (
-            <button key={m} className={!range && m === data?.month ? 'on' : ''} onClick={() => pickMonth(m)}>{monthLabel(m)}</button>
-          ))}
-          <button className={range || customOpen ? 'on' : ''} onClick={() => setCustomOpen(o => !o)} aria-expanded={customOpen}>
-            {range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : 'Custom…'}
-          </button>
-        </nav>
+        ))}
+        <button role="tab" aria-selected={current === 'review'} className={current === 'review' ? 'on' : ''} onClick={() => setView('review')}>
+          Needs review {reviewCount > 0 && <span className="count warn">{reviewCount}</span>}
+        </button>
+      </nav>
+
+      <section className="controls">
+        <div className="control">
+          <span className="control-label">Channel</span>
+          <div className="seg" role="tablist" aria-label="Ad channel">
+            {VIEWS.map(v => (
+              <button key={v.id} role="tab" aria-selected={channel === v.id} className={channel === v.id ? 'on' : ''} onClick={() => setChannel(v.id)}>{v.label}</button>
+            ))}
+          </div>
         </div>
-      </div>
+        <div className="control grow">
+          <span className="control-label">Period</span>
+          <div className="seg" aria-label="Period">
+            {(data?.months ?? []).map(m => (
+              <button key={m} className={!range && m === data?.month ? 'on' : ''} onClick={() => pickMonth(m)}>{monthLabel(m)}</button>
+            ))}
+            <button className={range || customOpen ? 'on' : ''} onClick={() => setCustomOpen(o => !o)} aria-expanded={customOpen}>
+              {range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : 'Custom dates'}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {customOpen && (
         <RangePicker
@@ -135,47 +147,69 @@ export default function Leaderboard() {
           active={range != null}
         />
       )}
-      {period && <div className="period">Showing <strong>{period}</strong> · rank changes are hidden for custom ranges</div>}
+      {period && <div className="period">Showing <strong>{period}</strong> · rank changes are hidden for custom dates</div>}
 
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
 
       <div className={stale ? 'loading' : ''}>
-        {data && team && <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`} team={team} total={data.total} label={label} custom={data.range != null} />}
+        {data && team && (
+          <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`}
+            team={team} total={data.total} label={label} custom={data.range != null} winnerSpend={data.winnerSpend} />
+        )}
         {data && current === 'review' && <ReviewView data={data} label={label} />}
       </div>
     </main>
   );
 }
 
-function TeamView({ team, total, label, custom }: { team: TeamBoard; total: number; label: string; custom: boolean }) {
+function TeamView({ team, total, label, custom, winnerSpend }: {
+  team: TeamBoard; total: number; label: string; custom: boolean; winnerSpend: number;
+}) {
   const when = custom ? 'in this period' : 'this month';
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'spend' | 'winners'>('spend');
   const [showIdle, setShowIdle] = useState(false);
   const withSpend = team.editors.filter(e => e.spend > 0);
   const idle = team.editors.filter(e => e.spend <= 0);
   const q = query.trim().toLowerCase();
   const match = (e: EditorRow) => !q || e.name.toLowerCase().includes(q) || (e.role ?? '').toLowerCase().includes(q);
-  const briefs = withSpend.reduce((s, e) => s + e.briefs.length, 0);
+  const editorsWithWinners = withSpend.filter(e => e.winners.length).length;
+  const sorted = sort === 'spend' ? withSpend
+    : [...withSpend].sort((a, b) => b.winners.length - a.winners.length || b.spend - a.spend);
+  const threshold = winnerSpend >= 1000 && winnerSpend % 1000 === 0 ? `$${winnerSpend / 1000}K` : money(winnerSpend);
 
   return (
     <>
       <section className="stats">
-        <Stat label={`${team.name} team spend`} value={money(team.spend)} sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
-        <Stat label="Top editor" value={withSpend[0] ? money(withSpend[0].spend) : '—'} sub={withSpend[0]?.name ?? 'No spend yet'} />
-        <Stat label="Editors with spend" value={`${withSpend.length} / ${team.editors.length}`} sub={idle.length ? `${idle.length} with no spend ${when}` : 'Everyone has spend'} />
-        <Stat label="Briefs with spend" value={String(briefs)} sub={withSpend.length ? `avg ${money(team.spend / withSpend.length)} per editor` : undefined} />
+        <Stat label={`${team.name} team spend`} value={money(team.spend)}
+          sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
+        <Stat label={`Winner ads (${threshold}+)`} value={String(team.winners)} highlight
+          sub={team.winners ? `from ${editorsWithWinners} editor${editorsWithWinners === 1 ? '' : 's'}` : `none ${when} yet`} />
+        <Stat label="Editors with spend" value={`${withSpend.length} of ${team.editors.length}`}
+          sub={idle.length ? `${idle.length} with no spend ${when}` : 'Everyone has spend'} />
+        <Stat label="Top editor" value={withSpend[0]?.name ?? '—'} sub={withSpend[0] ? money(withSpend[0].spend) : undefined} small />
       </section>
 
       {!withSpend.length && <div className="empty">No spend credited to the {team.name} team {when}.</div>}
       {withSpend.length > 0 && !q && <Podium editors={withSpend.slice(0, 3)} moves={!custom} />}
 
-      <div className="list-head">
-        <h2>{team.name} ranking</h2>
-        <input className="search" type="search" placeholder="Search editor or role" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
-      </div>
-      <Rows editors={withSpend.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom} />
-      {q && !withSpend.some(match) && !idle.some(match) && <div className="empty small">Nobody matches “{query}”.</div>}
+      {withSpend.length > 0 && (
+        <section className="card table-card">
+          <div className="table-tools">
+            <h2>{team.name} ranking</h2>
+            <div className="tools-right">
+              <div className="seg small" aria-label="Sort by">
+                <button className={sort === 'spend' ? 'on' : ''} onClick={() => setSort('spend')}>Sort by spend</button>
+                <button className={sort === 'winners' ? 'on' : ''} onClick={() => setSort('winners')}>Sort by winners</button>
+              </div>
+              <input className="search" type="search" placeholder="Search editor or role" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
+            </div>
+          </div>
+          <Rows editors={sorted.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom && sort === 'spend'} threshold={threshold} />
+          {q && !withSpend.some(match) && <div className="empty small">Nobody with spend matches “{query}”.</div>}
+        </section>
+      )}
 
       {idle.length > 0 && (
         <section className="idle">
@@ -185,7 +219,7 @@ function TeamView({ team, total, label, custom }: { team: TeamBoard; total: numb
           {(showIdle || q) && (
             <ul className="idle-list">
               {idle.filter(match).map(e => (
-                <li key={e.key}><Avatar name={e.name} src={e.avatar} size={28} /><span className="name">{e.name}</span><span className="role">{e.role}</span></li>
+                <li key={e.key}><Avatar name={e.name} src={e.avatar} size={30} /><span className="name">{e.name}</span><span className="role">{e.role}</span></li>
               ))}
             </ul>
           )}
@@ -210,14 +244,27 @@ function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }
   );
 }
 
-function Stat({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
+function Stat({ label, value, sub, warn, highlight, small }: { label: string; value: string; sub?: string; warn?: boolean; highlight?: boolean; small?: boolean }) {
   return (
-    <div className={`stat ${warn ? 'warn' : ''}`}>
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
+    <div className={`stat ${warn ? 'warn' : ''} ${highlight ? 'highlight' : ''}`}>
+      <div className="stat-label">{highlight && <Trophy />}{label}</div>
+      <div className={`stat-value ${small ? 'small' : ''}`} title={value}>{value}</div>
       {sub && <div className="stat-sub" title={sub}>{sub}</div>}
     </div>
   );
+}
+
+function Trophy({ size = 14 }: { size?: number }) {
+  return (
+    <svg className="trophy" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" />
+    </svg>
+  );
+}
+
+function WinnerBadge({ n, threshold }: { n: number; threshold: string }) {
+  if (!n) return <span className="winners none" title={`No ads with ${threshold}+ spend`}>0</span>;
+  return <span className="winners" title={`${n} ad${n === 1 ? '' : 's'} with ${threshold}+ spend`}><Trophy size={13} />{n}</span>;
 }
 
 function Avatar({ name, src, size = 40 }: { name: string; src: string | null; size?: number }) {
@@ -230,8 +277,8 @@ function Avatar({ name, src, size = 40 }: { name: string; src: string | null; si
 function Move({ e }: { e: EditorRow }) {
   if (e.prevRank == null) return <span className="move new">NEW</span>;
   const d = e.prevRank - e.rank;
-  if (d > 0) return <span className="move up" title={`Up from #${e.prevRank}`}>▲{d}</span>;
-  if (d < 0) return <span className="move down" title={`Down from #${e.prevRank}`}>▼{-d}</span>;
+  if (d > 0) return <span className="move up" title={`Up from #${e.prevRank}`}>▲ {d}</span>;
+  if (d < 0) return <span className="move down" title={`Down from #${e.prevRank}`}>▼ {-d}</span>;
   return <span className="move same" title="No change">–</span>;
 }
 
@@ -242,62 +289,96 @@ function Podium({ editors, moves }: { editors: EditorRow[]; moves: boolean }) {
       {order.map(e => (
         <div key={e.key} className={`step p${e.rank}`}>
           <div className="medal">{e.rank}</div>
-          <Avatar name={e.name} src={e.avatar} size={e.rank === 1 ? 72 : 56} />
+          <Avatar name={e.name} src={e.avatar} size={e.rank === 1 ? 68 : 56} />
           <div className="p-name">{e.name}</div>
           <div className="p-role">{e.role}</div>
           <div className="p-spend">{money(e.spend)}</div>
-          <div className="p-meta">{e.briefs.length} briefs · {e.ads} ads{moves && <> · <Move e={e} /></>}</div>
-          <div className="block" />
+          <div className="p-meta">
+            {e.winners.length > 0 && <span className="winners"><Trophy size={13} />{e.winners.length} winner{e.winners.length === 1 ? '' : 's'}</span>}
+            <span>{e.briefs.length} briefs · {e.ads} ads</span>
+            {moves && <Move e={e} />}
+          </div>
         </div>
       ))}
     </section>
   );
 }
 
-function Rows({ editors, top, moves }: { editors: EditorRow[]; top: number; moves: boolean }) {
+function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: number; moves: boolean; threshold: string }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!editors.length) return null;
   return (
-    <ol className="list">
-      {editors.map(e => {
+    <div className="table" role="table" aria-label="Ranking">
+      <div className="thead" role="row">
+        <span className="c-rank">#</span>
+        <span className="c-editor">Editor</span>
+        <span className="c-win" title={`Ads with ${threshold}+ spend`}>Winners</span>
+        <span className="c-num">Briefs</span>
+        <span className="c-num">Ads</span>
+        <span className="c-spend">Spend</span>
+        <span className="c-share">Share of team</span>
+        <span />
+      </div>
+      {editors.map((e, i) => {
         const isOpen = open === e.key;
         return (
-          <li key={e.key} className={`row ${isOpen ? 'open' : ''} ${e.rank <= 3 ? `top t${e.rank}` : ''}`}>
+          <div key={e.key} className={`trow ${isOpen ? 'open' : ''} ${e.rank <= 3 ? `t${e.rank}` : ''}`} role="row">
             <button className="row-main" onClick={() => setOpen(isOpen ? null : e.key)} aria-expanded={isOpen}>
-              <span className="rank">{e.rank}</span>
-              {moves ? <Move e={e} /> : <span />}
-              <Avatar name={e.name} src={e.avatar} size={36} />
-              <span className="who">
-                <span className="name">{e.name}</span>
-                <span className="role">{e.role}</span>
+              <span className="c-rank"><b>{moves ? e.rank : i + 1}</b>{moves && <Move e={e} />}</span>
+              <span className="c-editor">
+                <Avatar name={e.name} src={e.avatar} size={34} />
+                <span className="who"><span className="name">{e.name}</span><span className="role">{e.role}</span></span>
               </span>
-              <span className="bar"><span style={{ width: `${Math.max(2, top ? (e.spend / top) * 100 : 0)}%` }} /></span>
-              <span className="meta">{e.briefs.length} briefs · {e.ads} ads</span>
-              <span className="spend">{money(e.spend)}</span>
-              <span className="share">{(e.share * 100).toFixed(1)}%</span>
+              <span className="c-win"><WinnerBadge n={e.winners.length} threshold={threshold} /></span>
+              <span className="c-num">{e.briefs.length}</span>
+              <span className="c-num">{e.ads}</span>
+              <span className="c-spend">{money(e.spend)}</span>
+              <span className="c-share">
+                <span className="bar"><span style={{ width: `${Math.max(2, top ? (e.spend / top) * 100 : 0)}%` }} /></span>
+                <span className="pct">{(e.share * 100).toFixed(1)}%</span>
+              </span>
               <span className="chev">{isOpen ? '▾' : '▸'}</span>
             </button>
             {isOpen && (
-              <div className="scroll">
-                <table className="briefs">
-                  <thead><tr><th>Brief</th><th>ClickUp task</th><th className="r">Ads</th><th className="r">Spend</th></tr></thead>
-                  <tbody>
-                    {e.briefs.map(b => (
-                      <tr key={b.briefId}>
-                        <td className="mono">{b.briefId}</td>
-                        <td>{b.taskUrl ? <a href={b.taskUrl} target="_blank" rel="noreferrer">{b.taskName ?? 'Open task'}</a> : b.taskName ?? '—'}</td>
-                        <td className="r">{b.ads}</td>
-                        <td className="r">{money(b.spend)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="detail-panel">
+                <div className="detail-block">
+                  <h4><Trophy size={14} /> Winner ads ({threshold}+)</h4>
+                  {e.winners.length ? (
+                    <ul className="winner-list">
+                      {e.winners.map(w => (
+                        <li key={w.adId}>
+                          <span className="w-spend">{money(w.spend)}</span>
+                          <span className="w-name">{w.adName}</span>
+                          {w.taskUrl ? <a className="mono" href={w.taskUrl} target="_blank" rel="noreferrer">{w.briefId}</a> : <span className="mono">{w.briefId}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="muted">No ad reached {threshold} in this period.</p>}
+                </div>
+                <div className="detail-block">
+                  <h4>Briefs</h4>
+                  <div className="scroll">
+                    <table className="briefs">
+                      <thead><tr><th>Brief</th><th>ClickUp task</th><th className="r">Ads</th><th className="r">Spend</th></tr></thead>
+                      <tbody>
+                        {e.briefs.map(b => (
+                          <tr key={b.briefId}>
+                            <td className="mono">{b.briefId}</td>
+                            <td>{b.taskUrl ? <a href={b.taskUrl} target="_blank" rel="noreferrer">{b.taskName ?? 'Open task'}</a> : b.taskName ?? '—'}</td>
+                            <td className="r">{b.ads}</td>
+                            <td className="r">{money(b.spend)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
-          </li>
+          </div>
         );
       })}
-    </ol>
+    </div>
   );
 }
 

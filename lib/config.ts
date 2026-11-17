@@ -13,6 +13,8 @@ export const cfg = {
     briefFieldId: process.env.CLICKUP_BRIEF_FIELD_ID?.trim() || 'f129c811-0d3b-481d-9971-eb0b10bcf746',
   },
   splitMode: (process.env.SPLIT_MODE === 'joint' ? 'joint' : 'split') as 'split' | 'joint',
+  /** An ad is a "winner" when its spend in the selected period reaches this (USD) */
+  winnerSpend: Number(process.env.WINNER_SPEND ?? 40000),
   maxLookups: Number(process.env.MAX_CLICKUP_LOOKUPS_PER_RUN ?? 250),
   refreshHours: Number(process.env.EDITOR_REFRESH_HOURS ?? 6),
   timezone: process.env.REPORT_TIMEZONE ?? 'America/New_York',

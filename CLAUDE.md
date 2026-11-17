@@ -45,6 +45,12 @@ Details:
   with a `g:` prefix. The UI has a Meta / Google / All switch (`/api/leaderboard?channel=`); Meta is the default.
 - Snapshots are per view: Meta uses the plain editor key, others are prefixed (`google|u:1`, `all|u:1`).
 
+## Winner ads
+
+- An ad is a winner when the whole ad's spend in the selected period/channel is >= `WINNER_SPEND` (default
+  40000 USD). It counts for every editor credited on it (shared ads count for each) and once per team.
+  Computed in `allocate()`; shown as a trophy count per editor, a team stat, and a list in the expanded row.
+
 ## Custom date ranges
 
 - `/api/leaderboard?from=YYYY-MM-DD&to=YYYY-MM-DD` (inclusive) sums spend over exactly those days

@@ -79,6 +79,7 @@ export function demoLeaderboard(month: string, view: ChannelView = 'meta'): Lead
     review: alloc.review,
     lastSync: { at: new Date(Date.now() - 4 * 60_000).toISOString(), ok: true, error: null },
     splitMode: cfg.splitMode,
+    winnerSpend: cfg.winnerSpend,
     demo: true,
   };
 }

@@ -18,6 +18,9 @@ export type RosterEntry = { name: string; avatar: string | null; active: boolean
 
 export type EditorBrief = { briefId: string; taskName: string | null; taskUrl: string | null; spend: number; ads: number };
 
+/** An ad credited to an editor whose spend (the whole ad, not the editor's share) is >= the winner threshold */
+export type WinnerAd = { adId: string; adName: string; spend: number; briefId: string; taskUrl: string | null };
+
 export type EditorRow = {
   key: string;
   name: string;
@@ -27,6 +30,8 @@ export type EditorRow = {
   share: number;
   ads: number;
   briefs: EditorBrief[];
+  /** Winner ads, biggest first */
+  winners: WinnerAd[];
   rank: number;
   prevRank: number | null;
   role?: string;
@@ -37,6 +42,8 @@ export type TeamBoard = {
   name: string;
   /** Spend credited to this team's members */
   spend: number;
+  /** Distinct winner ads across the team */
+  winners: number;
   /** Members ranked by spend; members with no spend yet come last with spend 0 */
   editors: EditorRow[];
 };
@@ -70,5 +77,7 @@ export type LeaderboardPayload = {
   review: ReviewItem[];
   lastSync: { at: string; ok: boolean; error?: string | null } | null;
   splitMode: 'split' | 'joint';
+  /** Winner ad threshold in USD */
+  winnerSpend: number;
   demo: boolean;
 };

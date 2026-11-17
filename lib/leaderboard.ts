@@ -1,13 +1,13 @@
 import { cfg } from './config';
 import { addDays, todayIn } from './dates';
 import type {
-  AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard,
+  AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard, WinnerAd,
 } from './types';
 import { TEAMS, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
-  briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }> };
+  briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }>; winners: Map<string, WinnerAd> };
 
 export type Allocation = {
   total: number;
@@ -37,6 +37,7 @@ export function allocate(
   briefs: Map<string, BriefInfo>,
   roster: Map<string, RosterEntry>,
   splitMode: 'split' | 'joint' = cfg.splitMode,
+  winnerSpend: number = cfg.winnerSpend,
 ): Allocation {
   const acc = new Map<string, Acc>();
   const review: ReviewItem[] = [];
@@ -60,12 +61,15 @@ export function allocate(
       const active = sorted.every(e => roster.get(e.key)?.active ?? true);
       let a = acc.get(key);
       if (!a) {
-        a = { key, name: names.join(' / '), active, spend: 0, ads: new Set(), briefs: new Map(),
+        a = { key, name: names.join(' / '), active, spend: 0, ads: new Set(), briefs: new Map(), winners: new Map(),
           avatar: sorted.length === 1 ? (roster.get(sorted[0].key)?.avatar ?? sorted[0].avatar ?? null) : null };
         acc.set(key, a);
       }
       a.spend += each;
       a.ads.add(ad.adId);
+      if (ad.spend >= winnerSpend && !a.winners.has(ad.adId)) {
+        a.winners.set(ad.adId, { adId: ad.adId, adName: ad.adName, spend: round2(ad.spend), briefId: info.briefId, taskUrl: info.taskUrl });
+      }
       const b = a.briefs.get(info.briefId) ?? { info, spend: 0, ads: new Set<string>() };
       b.spend += each;
       b.ads.add(ad.adId);
@@ -127,6 +131,7 @@ export function allocate(
     briefs: [...a.briefs.values()]
       .map((b): EditorBrief => ({ briefId: b.info.briefId, taskName: b.info.taskName, taskUrl: b.info.taskUrl, spend: round2(b.spend), ads: b.ads.size }))
       .sort((x, y) => y.spend - x.spend),
+    winners: [...a.winners.values()].sort((x, y) => y.spend - x.spend),
   })).sort((x, y) => y.spend - x.spend || x.name.localeCompare(y.name));
 
   review.sort((a, b) => b.spend - a.spend);
@@ -152,7 +157,7 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
       const e = byKey.get(key);
       return {
         key, name: m.name, role: m.role, avatar: e?.avatar ?? null, active: true,
-        spend: e?.spend ?? 0, ads: e?.ads ?? 0, briefs: e?.briefs ?? [], share: 0,
+        spend: e?.spend ?? 0, ads: e?.ads ?? 0, briefs: e?.briefs ?? [], winners: e?.winners ?? [], share: 0,
       };
     });
     rows.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
@@ -164,6 +169,7 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
     const prevRank = new Map(prevOrder.map((r, i) => [r.key, i + 1]));
     return {
       id: team.id, name: team.name, spend: round2(spend),
+      winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
       editors: rows.map((r, i) => ({
         ...r, share: spend ? r.spend / spend : 0, rank: i + 1,
         prevRank: r.spend > 0 ? prevRank.get(r.key) ?? null : null,
@@ -209,6 +215,7 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     review: alloc.review,
     lastSync: last,
     splitMode: cfg.splitMode,
+    winnerSpend: cfg.winnerSpend,
     demo: false,
   };
 }
