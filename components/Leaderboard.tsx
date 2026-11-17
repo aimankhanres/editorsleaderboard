@@ -10,7 +10,7 @@ const POLL_MS = 60_000;
 const REVIEW_LABEL: Record<ReviewKind, { title: string; hint: string }> = {
   no_brief_id: { title: 'No brief ID in ad name', hint: 'Ad name has no OO-, AOG- or CIN- brief ID, so it cannot be linked to a ClickUp task.' },
   task_not_found: { title: 'Brief not found in ClickUp', hint: 'No task has this Brief ID. Usually a typo in the ad name or an empty Brief ID field.' },
-  other_workspace: { title: 'Made in another ClickUp workspace', hint: '6-digit brief IDs come from a separate ClickUp workspace we cannot read, so the editor is unknown here.' },
+  other_workspace: { title: 'Made in another ClickUp workspace', hint: '6-digit brief from a separate ClickUp workspace, and no resize task here has it as its Old Brief Id, so no editor to credit.' },
   no_editor: { title: 'Editor field empty', hint: 'Task found, but nobody is set in its Editor field.' },
   pending: { title: 'Waiting for ClickUp lookup', hint: 'Will be resolved by an upcoming sync.' },
   name_mismatch: { title: 'Ad name mentions a different editor', hint: 'Already credited via ClickUp; check the Editor field is right.' },

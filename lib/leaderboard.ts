@@ -5,6 +5,7 @@ import type {
 } from './types';
 import { TEAMS, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
+import { isOtherWorkspaceBrief } from './briefs';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
   briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }>; winners: Map<string, WinnerAd> };
@@ -23,14 +24,7 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0]?.toLowerCase() ?
  * Pure attribution. Ad spend -> briefs (split evenly) -> editors (split or joint).
  * Everything that can't be credited ends up in `review` with its spend; nothing is dropped.
  */
-/**
- * 6-digit brief IDs (OO-102573, AOG-100721, CIN-102186 ...) are created in a separate ClickUp workspace
- * (resize tasks link to them via "Org Task ID"), which our token cannot read. When one isn't found in
- * Resilia's workspace, list it on its own instead of as a broken "not found".
- */
-export function isOtherWorkspaceBrief(briefId: string): boolean {
-  return /^[A-Z]+-\d{6,}$/.test(briefId);
-}
+export { isOtherWorkspaceBrief } from './briefs';
 
 export function allocate(
   ads: AdAgg[],
@@ -100,7 +94,7 @@ export function allocate(
       if (!info || info.status === 'pending' || info.status === 'error') {
         review.push({ ...base, kind: 'pending', detail: info?.status === 'error' ? 'ClickUp lookup failed, will retry' : 'Not looked up yet' });
       } else if (info.status === 'not_found' && isOtherWorkspaceBrief(briefId)) {
-        review.push({ ...base, kind: 'other_workspace', detail: 'Original brief lives in another ClickUp workspace' });
+        review.push({ ...base, kind: 'other_workspace', detail: 'Original brief is in another workspace; no resize task found' });
       } else if (info.status === 'not_found') {
         review.push({ ...base, kind: 'task_not_found', detail: 'No ClickUp task has this Brief ID' });
       } else if (!info.editors.length || info.status === 'no_editor') {

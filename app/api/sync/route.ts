@@ -27,7 +27,12 @@ export async function GET(req: Request) {
   const from = monthStart(months[0]);
 
   // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
-  if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck('AOG-10150'));
+  if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck(url.searchParams.get('brief') || 'AOG-10150'));
+  // ?requeue=other : mark 6-digit "not found" briefs for a fresh lookup (resize fallback). Next syncs pick them up.
+  if (url.searchParams.get('requeue') === 'other') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    return NextResponse.json({ requeued: await store.requeueOtherWorkspaceBriefs() });
+  }
   // ?diag=channel&channel=google-ads : read-only check of how much of another channel's spend is traceable
   // to briefs/editors, using the brief lookups we already have. Writes nothing.
   if (url.searchParams.get('diag') === 'channel') {

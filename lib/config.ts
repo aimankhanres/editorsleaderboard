@@ -11,6 +11,8 @@ export const cfg = {
     editorField: (process.env.CLICKUP_EDITOR_FIELD ?? 'Editor').trim().toLowerCase(),
     // Resilia's "Brief ID" short_text field. Override with CLICKUP_BRIEF_FIELD_ID if it ever changes.
     briefFieldId: process.env.CLICKUP_BRIEF_FIELD_ID?.trim() || 'f129c811-0d3b-481d-9971-eb0b10bcf746',
+    // "Old Brief Id" on resize tasks: the 6-digit brief they were resized from (lives in another workspace)
+    oldBriefFieldId: process.env.CLICKUP_OLD_BRIEF_FIELD_ID?.trim() || '6d5035b2-d44c-43e8-a58c-0650af0f32a5',
   },
   splitMode: (process.env.SPLIT_MODE === 'joint' ? 'joint' : 'split') as 'split' | 'joint',
   /** An ad is a "winner" when its spend in the selected period reaches this (USD) */

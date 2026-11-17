@@ -160,6 +160,16 @@ export async function upsertBriefs(infos: BriefInfo[]): Promise<void> {
   }
 }
 
+/** Queue 6-digit briefs that were "not found" for a fresh lookup (e.g. after adding the resize fallback). */
+export async function requeueOtherWorkspaceBriefs(): Promise<number> {
+  const rows = await q<{ n: string }>(
+    `WITH u AS (UPDATE brief_map SET status = 'pending', fetched_at = 'epoch'
+       WHERE status = 'not_found' AND brief_id ~ '^[A-Z]+-[0-9]{6,}$' RETURNING 1)
+     SELECT COUNT(*) AS n FROM u`,
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 /** A transient failure: keep the previous editors (if any) but retry next run. */
 export async function markBriefsErrored(briefIds: string[]): Promise<void> {
   if (!briefIds.length) return;

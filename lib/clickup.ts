@@ -9,7 +9,7 @@
  * Dropdown, labels and text Editor fields are handled too in case the field type changes.
  */
 import { cfg } from './config';
-import { extractBriefIds } from './briefs';
+import { extractBriefIds, isOtherWorkspaceBrief } from './briefs';
 import type { BriefInfo, EditorRef } from './types';
 
 const BASE = 'https://api.clickup.com/api/v2';
@@ -108,26 +108,50 @@ function toInfo(briefId: string, task: CuTask): BriefInfo {
 const notFound = (briefId: string): BriefInfo =>
   ({ briefId, taskId: null, taskName: null, taskUrl: null, editors: [], status: 'not_found' });
 
+/** Workspace tasks whose short_text field `fieldId` holds exactly this brief ID, oldest first. */
+async function tasksWithField(fieldId: string, briefId: string): Promise<CuTask[]> {
+  const filter = JSON.stringify([{ field_id: fieldId, operator: '=', value: briefId }]);
+  const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', custom_fields: filter });
+  const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
+  if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const { tasks = [] } = (await res.json()) as { tasks?: CuTask[] };
+  // "=" on text can be a contains-match; keep only tasks whose field really is this brief ID.
+  return tasks
+    .filter(t => {
+      const f = t.custom_fields?.find(c => c.id === fieldId);
+      return typeof f?.value === 'string' && extractBriefIds(f.value).includes(briefId);
+    })
+    .sort((a, b) => Number(a.date_created ?? 0) - Number(b.date_created ?? 0));
+}
+
 /** Find the task for one brief ID. Throws RateLimited on 429, Error on other failures. */
 export async function lookupBrief(briefId: string): Promise<BriefInfo> {
   if (!cfg.cu.token || !cfg.cu.teamId) throw new Error('CLICKUP_TOKEN / CLICKUP_TEAM_ID not set');
 
   if (cfg.cu.briefFieldId) {
     // Brief ID stored in a custom field: filter workspace tasks by it.
-    const filter = JSON.stringify([{ field_id: cfg.cu.briefFieldId, operator: '=', value: briefId }]);
-    const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', custom_fields: filter });
-    const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
-    if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const { tasks = [] } = (await res.json()) as { tasks?: CuTask[] };
-    // "=" on text can be a contains-match; keep only tasks whose field really is this brief ID.
-    const exact = tasks.filter(t => {
-      const f = t.custom_fields?.find(c => c.id === cfg.cu.briefFieldId);
-      return typeof f?.value === 'string' && extractBriefIds(f.value).includes(briefId);
-    });
-    if (!exact.length) return notFound(briefId);
-    // Several tasks with the same Brief ID: take the original (oldest).
-    exact.sort((a, b) => Number(a.date_created ?? 0) - Number(b.date_created ?? 0));
-    return toInfo(briefId, exact[0]);
+    const exact = await tasksWithField(cfg.cu.briefFieldId, briefId);
+    if (exact.length) return toInfo(briefId, exact[0]); // several tasks with the same Brief ID: the original (oldest)
+
+    // 6-digit briefs are made in another workspace. Credit the editor(s) of the resize tasks in this
+    // workspace that were made from it ("Old Brief Id" = this brief), split evenly if there are several.
+    if (isOtherWorkspaceBrief(briefId) && cfg.cu.oldBriefFieldId) {
+      const resizes = await tasksWithField(cfg.cu.oldBriefFieldId, briefId);
+      if (resizes.length) {
+        const editors = new Map<string, EditorRef>();
+        for (const t of resizes) for (const e of extractEditors(t)) editors.set(e.key, e);
+        const first = resizes[0];
+        return {
+          briefId,
+          taskId: first.id,
+          taskName: `Via resize: ${first.name}${resizes.length > 1 ? ` (+${resizes.length - 1} more)` : ''}`,
+          taskUrl: first.url || `https://app.clickup.com/t/${first.id}`,
+          editors: [...editors.values()],
+          status: editors.size ? 'ok' : 'no_editor',
+        };
+      }
+    }
+    return notFound(briefId);
   }
 
   // Brief ID is the ClickUp custom task ID.

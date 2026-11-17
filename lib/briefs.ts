@@ -12,3 +12,12 @@ export function extractBriefIds(adName: string): string[] {
   for (const m of adName.matchAll(BRIEF_RE)) out.add(`${m[1].toUpperCase()}-${m[2]}`);
   return [...out];
 }
+
+/**
+ * 6-digit brief IDs (OO-102573, AOG-100721, CIN-102186 ...) are created in a separate ClickUp workspace
+ * (resize tasks link to them via "Org Task ID"), which our token cannot read. When one isn't found in
+ * Resilia's workspace, list it on its own instead of as a broken "not found".
+ */
+export function isOtherWorkspaceBrief(briefId: string): boolean {
+  return /^[A-Z]+-\d{6,}$/.test(briefId);
+}
