@@ -92,6 +92,7 @@ export function allocate(
     }
     const share = ad.spend / ad.briefIds.length;
     const creditedKeys = new Set<string>();
+    const creditedTokens = new Set<string>(); // every name word of the credited editors
 
     for (const briefId of ad.briefIds) {
       const info = briefs.get(briefId);
@@ -107,14 +108,18 @@ export function allocate(
       } else {
         credit(info.editors, share, ad, info);
         attributed += share;
-        info.editors.forEach(e => creditedKeys.add(e.key));
+        info.editors.forEach(e => {
+          creditedKeys.add(e.key);
+          for (const n of [e.name, roster.get(e.key)?.name ?? '', watchNames.get(e.key) ?? '']) for (const t of tokens(n)) creditedTokens.add(t);
+        });
       }
     }
 
     // Cross-check: the ad name mentions a known editor who isn't credited by ClickUp
     if (creditedKeys.size && rosterFirst.size) {
       const mentioned = new Set<string>();
-      for (const t of tokens(ad.adName)) for (const k of rosterFirst.get(t) ?? []) mentioned.add(k);
+      // A word that is also part of the credited editor's own name (shared first names, "Abdul Rehman") is not a conflict
+      for (const t of tokens(ad.adName)) if (!creditedTokens.has(t)) for (const k of rosterFirst.get(t) ?? []) mentioned.add(k);
       if (mentioned.size && ![...mentioned].some(k => creditedKeys.has(k))) {
         const named = [...new Set([...mentioned].map(k => watchNames.get(k) ?? roster.get(k)?.name ?? k))].join(', ');
         const credited = [...new Set([...creditedKeys].map(k => watchNames.get(k) ?? roster.get(k)?.name ?? k))].join(', ');
