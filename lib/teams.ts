@@ -16,18 +16,13 @@ export const TEAMS: Team[] = [
     name: 'Resizing',
     members: [
       { id: 106853412, name: 'Michael Roque', role: 'Editing Lead – Resizing' },
-      { id: 106853408, name: 'Cristian Jay Reyes', role: 'Editing Lead – Resizing' },
-      { id: 106886777, name: 'Ayyaz Sohail', role: 'Sr. Editor' },
-      { id: 106853409, name: 'Clariz Barrera', role: 'Sr. Editor' },
       { id: 100998805, name: 'Usama Mir', role: RESIZE },
       { id: 106853413, name: 'Aqib Shakeel', role: RESIZE },
       { id: 106853410, name: 'Dustin Bryan', role: RESIZE },
       { id: 101080547, name: 'Armand Lladones', role: RESIZE },
-      { id: 101069834, name: 'Lucylen (Lucy) Pagado', role: RESIZE },
       { id: 101095615, name: 'Jerry Emmanuel', role: RESIZE },
       { id: 101097538, name: 'Tope Ojomo', role: RESIZE },
       { id: 106838108, name: 'Neil Dave', role: RESIZE },
-      { id: 106842654, name: 'Jasmin Marinay', role: RESIZE },
       { id: 106857511, name: 'Lucky Jake Tapayan', role: RESIZE },
       { id: 228272515, name: 'Haseeb Choudhary', role: RESIZE },
       { id: 106863134, name: 'Adilbek Sultanov', role: RESIZE },
@@ -71,7 +66,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    // Same people also appear on the Resizing board; same attribution (all spend credited to them in ClickUp)
+    // Rips editors: only on this board. For now credited with all their ClickUp work; a rip-only filter is TBD
     id: 'rips',
     name: 'Rips',
     members: [
