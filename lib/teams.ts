@@ -70,4 +70,16 @@ export const TEAMS: Team[] = [
       { id: 106926186, name: 'Anum Naqvi', role: 'Editor – Google Iterations' },
     ],
   },
+  {
+    // Same people also appear on the Resizing board; same attribution (all spend credited to them in ClickUp)
+    id: 'rips',
+    name: 'Rips',
+    members: [
+      { id: 106853409, name: 'Clariz Barrera', role: RESIZE },
+      { id: 106886777, name: 'Ayyaz Sohail', role: 'Sr. Editor' },
+      { id: 106853408, name: 'Cristian Jay Reyes', role: 'Editing Lead – Resizing' },
+      { id: 106842654, name: 'Jasmin Marinay', role: RESIZE },
+      { id: 101069834, name: 'Lucylen (Lucy) Pagado', role: RESIZE },
+    ],
+  },
 ];

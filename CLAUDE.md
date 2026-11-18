@@ -32,7 +32,8 @@ Details:
 
 ## Teams (what the dashboard shows)
 
-- Two boards, **Resizing** and **Iterations**, defined in `lib/teams.ts` by ClickUp user id. Only listed
+- Three boards, **Resizing**, **Iterations** and **Rips** (5 people who are also on Resizing), defined in
+  `lib/teams.ts` by ClickUp user id. Only listed
   people appear; members with no spend this month are listed under "No spend yet". Ranks and rank changes
   are within each team (`buildTeams`). Attribution itself is unchanged: an editor's spend is everything
   credited to them via the Editor field, whatever the task type.
