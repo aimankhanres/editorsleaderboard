@@ -9,7 +9,7 @@
  * Dropdown, labels and text Editor fields are handled too in case the field type changes.
  */
 import { cfg } from './config';
-import { extractBriefIds, isOtherWorkspaceBrief } from './briefs';
+import { BARE_PREFIX, extractBriefIds, isBareNumber, isOtherWorkspaceBrief } from './briefs';
 import type { BriefInfo, EditorRef } from './types';
 
 const BASE = 'https://api.clickup.com/api/v2';
@@ -130,9 +130,33 @@ export function isResizeOf(taskName: string, briefId: string): boolean {
   return new RegExp(`(?:^|[^A-Za-z0-9])r\\s?${prefix}[-_ ]?${digits}(?![0-9])`, 'i').test(taskName);
 }
 
+const PREFIXES = ['OO', 'AOG', 'CIN'];
+
+/**
+ * A bare number from an ad name ("#23755"): try it as OO-, AOG- and CIN-. Credited only when exactly one
+ * prefix finds a task; if several do, it stays in Needs review listing the candidates.
+ */
+async function lookupBareNumber(key: string): Promise<BriefInfo> {
+  const digits = key.slice(BARE_PREFIX.length);
+  const hits: BriefInfo[] = [];
+  for (const p of PREFIXES) {
+    const info = await lookupBrief(`${p}-${digits}`);
+    if (info.status !== 'not_found') hits.push(info);
+  }
+  if (hits.length === 1) {
+    const h = hits[0];
+    return { ...h, briefId: key, taskName: `${h.briefId} (number only in ad name): ${h.taskName ?? ''}` };
+  }
+  if (hits.length > 1) {
+    return { ...notFound(key), taskName: `Number matches several briefs: ${hits.map(h => h.briefId).join(', ')}` };
+  }
+  return notFound(key);
+}
+
 /** Find the task for one brief ID. Throws RateLimited on 429, Error on other failures. */
 export async function lookupBrief(briefId: string): Promise<BriefInfo> {
   if (!cfg.cu.token || !cfg.cu.teamId) throw new Error('CLICKUP_TOKEN / CLICKUP_TEAM_ID not set');
+  if (isBareNumber(briefId)) return lookupBareNumber(briefId);
 
   if (cfg.cu.briefFieldId) {
     // Brief ID stored in a custom field: filter workspace tasks by it.

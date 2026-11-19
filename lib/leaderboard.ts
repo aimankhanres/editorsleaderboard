@@ -5,7 +5,7 @@ import type {
 } from './types';
 import { TEAMS, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
-import { isOtherWorkspaceBrief } from './briefs';
+import { isBareNumber, isOtherWorkspaceBrief } from './briefs';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
   briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }>; winners: Map<string, WinnerAd> };
@@ -93,8 +93,12 @@ export function allocate(
       const base = { adId: ad.adId, adName: ad.adName, spend: share, briefId, taskUrl: info?.taskUrl ?? null };
       if (!info || info.status === 'pending' || info.status === 'error') {
         review.push({ ...base, kind: 'pending', detail: info?.status === 'error' ? 'ClickUp lookup failed, will retry' : 'Not looked up yet' });
+      } else if (info.status === 'not_found' && info.taskName) {
+        review.push({ ...base, kind: 'task_not_found', detail: info.taskName }); // bare number matching several briefs
       } else if (info.status === 'not_found' && isOtherWorkspaceBrief(briefId)) {
         review.push({ ...base, kind: 'other_workspace', detail: 'Original brief is in another workspace; no resize task found' });
+      } else if (info.status === 'not_found' && isBareNumber(briefId)) {
+        review.push({ ...base, kind: 'task_not_found', detail: `No OO-/AOG-/CIN-${briefId.slice(1)} task in ClickUp` });
       } else if (info.status === 'not_found') {
         review.push({ ...base, kind: 'task_not_found', detail: 'No ClickUp task has this Brief ID' });
       } else if (!info.editors.length || info.status === 'no_editor') {

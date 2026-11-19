@@ -35,6 +35,11 @@ export async function GET(req: Request) {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
     return NextResponse.json({ requeued: await store.requeueOtherWorkspaceBriefs() });
   }
+  // ?reextract=1 : re-run brief extraction on stored ad names (after the rules in lib/briefs.ts change)
+  if (url.searchParams.get('reextract')) {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    return NextResponse.json({ adNamesChanged: await store.reextractBriefIds() });
+  }
   // ?diag=channel&channel=google-ads : read-only check of how much of another channel's spend is traceable
   // to briefs/editors, using the brief lookups we already have. Writes nothing.
   if (url.searchParams.get('diag') === 'channel') {

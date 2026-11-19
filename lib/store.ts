@@ -1,5 +1,6 @@
 import { q } from './db';
 import { cfg } from './config';
+import { extractBriefIds } from './briefs';
 import { monthStart, nextMonth } from './dates';
 import type { AdAgg, BriefInfo, BriefStatus, EditorRef, RosterEntry } from './types';
 
@@ -291,4 +292,23 @@ export async function lastSync(): Promise<{ at: string; ok: boolean; error: stri
   );
   if (!rows[0]) return null;
   return { at: new Date(rows[0].finished_at).toISOString(), ok: rows[0].ok, error: rows[0].error };
+}
+
+/** Re-run brief extraction on every stored ad name (after the extraction rules change). Returns ads changed. */
+export async function reextractBriefIds(): Promise<number> {
+  const rows = await q<{ ad_name: string; brief_ids: string[] }>(
+    `SELECT DISTINCT ON (ad_name) ad_name, brief_ids FROM ad_spend`,
+  );
+  const changed = rows
+    .map(r => ({ ad_name: r.ad_name, brief_ids: extractBriefIds(r.ad_name) }))
+    .filter((r, i) => JSON.stringify(r.brief_ids) !== JSON.stringify(rows[i].brief_ids ?? []));
+  for (const part of chunks(changed)) {
+    await q(
+      `UPDATE ad_spend a SET brief_ids = x.brief_ids, updated_at = now()
+         FROM jsonb_to_recordset($1::jsonb) AS x(ad_name text, brief_ids jsonb)
+        WHERE a.ad_name = x.ad_name`,
+      [JSON.stringify(part)],
+    );
+  }
+  return changed.length;
 }
