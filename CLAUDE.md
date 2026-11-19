@@ -16,7 +16,8 @@ Details:
 - Use **ad-level** rows only. Never sum ad sets or campaigns (double-counting).
 - Brief ID regex: `(OO|AOG|CIN)[-_ ]?\d+` (Oregano, Garlic, Cinnamon), case-insensitive, normalised to
   `PREFIX-<digits>`; a prefix glued to a letter (`rOO-`, `rCIN-`, `iCIN-`) is ignored (see `lib/briefs.ts`).
-- Bare-number fallback: an ad name with no prefixed brief ID (`PDP + b.h [23755 vh]`, `102186 PDP`, `RSOO-4547`) gets
+- Bare-number fallback: an ad name with no prefixed brief ID (`PDP + b.h [23755 vh]`, `102186 PDP`) first uses a prefix glued to the number (`RSOO-4547` -> OO-4547, exact),
+  else gets
   each standalone 4-6 digit number as `#23755` (not years 2010-2039, prices, dimensions, or numbers glued to a letter).
   The lookup tries OO-/AOG-/CIN-<n>; credited only if exactly one prefix finds a task, otherwise Needs review lists
   the candidates. After changing extraction rules, run `GET /api/sync?reextract=1` to rewrite stored brief_ids.
