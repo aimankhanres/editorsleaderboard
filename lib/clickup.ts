@@ -210,3 +210,33 @@ export async function clickupCheck(sampleBriefId: string): Promise<Record<string
     teams: teamsBody?.teams?.map(t => ({ id: t.id, name: t.name })) ?? teamsRes.status, sample,
   };
 }
+
+const EDITOR_FIELD_ID = process.env.CLICKUP_EDITOR_FIELD_ID || 'b2859b96-5304-464c-8e14-f2fb9e6876a5';
+
+/**
+ * Audit helper (read-only): every task whose Editor field includes this ClickUp user, and the brief IDs
+ * those tasks prove the user edited: the task's own Brief ID, plus the Old Brief Id when the task is a
+ * resize of it (name carries "r<brief>"). This is the reverse of lookupBrief, so it checks it independently.
+ */
+export async function briefsEditedBy(userId: number): Promise<{ tasks: number; briefs: Map<string, string> }> {
+  const filter = JSON.stringify([{ field_id: EDITOR_FIELD_ID, operator: 'ANY', value: [userId] }]);
+  const briefs = new Map<string, string>(); // briefId -> task url
+  let tasks = 0;
+  for (let page = 0; page < 30; page++) {
+    const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', archived: 'false', page: String(page), custom_fields: filter });
+    const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
+    if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const body = (await res.json()) as { tasks?: CuTask[]; last_page?: boolean };
+    for (const t of body.tasks ?? []) {
+      if (!extractEditors(t).some(e => e.key === `u:${userId}`)) continue; // filter sanity check
+      tasks++;
+      const url = t.url || `https://app.clickup.com/t/${t.id}`;
+      const own = t.custom_fields?.find(f => f.id === cfg.cu.briefFieldId)?.value;
+      if (typeof own === 'string') for (const b of extractBriefIds(own)) briefs.set(b, url);
+      const old = t.custom_fields?.find(f => f.id === cfg.cu.oldBriefFieldId)?.value;
+      if (typeof old === 'string') for (const b of extractBriefIds(old)) if (isResizeOf(t.name, b)) briefs.set(b, url);
+    }
+    if (body.last_page !== false || !(body.tasks ?? []).length) break;
+  }
+  return { tasks, briefs };
+}

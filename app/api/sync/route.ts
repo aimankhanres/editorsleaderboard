@@ -3,7 +3,9 @@ import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
 import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
-import { clickupCheck, lookupBriefs } from '@/lib/clickup';
+import { briefsEditedBy, clickupCheck, lookupBriefs } from '@/lib/clickup';
+import { buildLeaderboard } from '@/lib/leaderboard';
+import { TEAMS } from '@/lib/teams';
 import { extractBriefIds } from '@/lib/briefs';
 import { allocate, buildTeams } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
@@ -68,6 +70,28 @@ export async function GET(req: Request) {
         .map(a => `${Math.round(a.spend)} | ${a.campaignType ?? ''} | ${a.adName.slice(0, 70)} | ${(a.campaign ?? '').slice(0, 40)}`),
       sampleWithBrief: [...withBrief].sort((a, b) => b.spend - a.spend).slice(0, 6).map(a => `${Math.round(a.spend)} | ${a.adName.slice(0, 80)}`),
     });
+  }
+  // ?diag=audit&team=resizing&offset=0&limit=10 : read-only. For each listed editor, fetch every ClickUp task
+  // where they are in the Editor field and check that each brief the dashboard credits to them is one of those.
+  if (url.searchParams.get('diag') === 'audit') {
+    const team = TEAMS.find(t => t.id === url.searchParams.get('team')) ?? TEAMS[0];
+    const offset = Number(url.searchParams.get('offset') ?? 0), limit = Number(url.searchParams.get('limit') ?? 8);
+    const lb = await buildLeaderboard(month, 'all');
+    const board = lb.teams.find(t => t.id === team.id)!;
+    const out = [];
+    for (const m of team.members.slice(offset, offset + limit)) {
+      const row = board.editors.find(e => e.key === `u:${m.id}`);
+      const credited = row?.briefs ?? [];
+      if (Date.now() > deadline) { out.push({ editor: m.name, skipped: 'time budget' }); continue; }
+      const mine = await briefsEditedBy(m.id);
+      const notTheirs = credited.filter(b => !mine.briefs.has(b.briefId));
+      out.push({
+        editor: m.name, spend: Math.round(row?.spend ?? 0), creditedBriefs: credited.length, clickupTasks: mine.tasks,
+        verified: credited.length - notTheirs.length,
+        notTheirs: notTheirs.map(b => ({ briefId: b.briefId, spend: Math.round(b.spend), task: b.taskName, url: b.taskUrl })),
+      });
+    }
+    return NextResponse.json({ team: team.name, month, offset, limit, total: team.members.length, editors: out });
   }
   if (url.searchParams.get('diag')) return NextResponse.json(await diagnose(from, today));
 
