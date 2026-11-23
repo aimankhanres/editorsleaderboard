@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
+import { addDays, monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
 import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { briefsEditedBy, clickupCheck, lookupBriefs } from '@/lib/clickup';
 import { buildLeaderboard } from '@/lib/leaderboard';
@@ -129,8 +129,11 @@ export async function GET(req: Request) {
   const runId = await store.startSyncRun();
   let ads = 0, lookups = 0;
   try {
-    // 1-2. Spend
-    const rows = await fetchAdSpend(from, today);
+    // 1-2. Spend. Refetching the whole month every run gets slower each day and hits the 300s limit late in the
+    // month, so each run fetches the last 3 days (Triple Whale still revises those) plus 3 older days in rotation
+    // (every older day is refreshed several times a day). ?full=1 refetches everything.
+    const rows: Awaited<ReturnType<typeof fetchAdSpend>> = [];
+    for (const [a, b] of syncWindows(from, today, url.searchParams.get('full') === '1')) rows.push(...await fetchAdSpend(a, b));
     await store.upsertAdSpend(rows);
     ads = new Set(rows.map(r => r.adId)).size;
 
@@ -166,4 +169,17 @@ export async function GET(req: Request) {
     await store.finishSyncRun(runId, { ok: false, ads, lookups, pending: 0, error: msg }).catch(() => {});
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
+}
+
+/** Day ranges [from, to] (inclusive) to fetch this run: the last 3 days plus a rotating slice of older days. */
+function syncWindows(from: string, today: string, full: boolean): [string, string][] {
+  const recentFrom = addDays(today, -2) < from ? from : addDays(today, -2);
+  if (full || recentFrom === from) return [[from, today]];
+  const older: string[] = [];
+  for (let d = from; d < recentFrom; d = addDays(d, 1)) older.push(d);
+  const SLICE = 3;
+  const slices = Math.ceil(older.length / SLICE);
+  const pick = Math.floor(Date.now() / (15 * 60_000)) % slices; // changes every 15 minutes
+  const part = older.slice(pick * SLICE, pick * SLICE + SLICE);
+  return [[part[0], part[part.length - 1]], [recentFrom, today]];
 }

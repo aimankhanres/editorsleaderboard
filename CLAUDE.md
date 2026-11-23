@@ -85,7 +85,8 @@ Details:
 
 ```
 /api/sync (cron, protected by CRON_SECRET)
-  1. Triple Whale: ad-level daily spend, month-to-date (also the previous month during days 1-3)
+  1. Triple Whale: ad-level daily spend for the last 3 days plus 3 older days of the month in rotation (also the
+     previous month during days 1-3); `?full=1` refetches the whole range. Keeps runs well under the 300s limit.
   2. Upsert into ad_spend with extracted brief_ids
   3. For brief IDs that are new or stale in brief_map: ClickUp GET task -> read Editor field
      - Lookup: GET /api/v2/task/{OO-id}?custom_task_ids=true&team_id=...  (if OO is the custom ID)
