@@ -390,8 +390,8 @@ export async function resolveInternalBriefs(keys: string[]): Promise<BriefInfo[]
     if (!k) continue;
     const rows = await q<{ task_id: string; name: string; url: string | null; brief_id: string | null; editors: { id: number; name: string }[] }>(
       `SELECT task_id, name, url, brief_id, editors FROM cu_tasks
-        WHERE name ~* ('^(\d{1,2}x\d{1,2}[_ -]*)?#0*' || $1 || '([^0-9]|$)')
-          AND ($2::int IS NULL OR name ~* ('^(\d{1,2}x\d{1,2}[_ -]*)?#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
+        WHERE name ~* ('^([0-9]{1,2}x[0-9]{1,2}[_ -]*)?#0*' || $1 || '([^0-9]|$)')
+          AND ($2::int IS NULL OR name ~* ('^([0-9]{1,2}x[0-9]{1,2}[_ -]*)?#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
           AND ($3::text IS NULL OR name ~* ('pn[^A-Za-z0-9]*' || $3 || '([^A-Za-z]|$)') OR brief_id ILIKE ($3 || '-%'))
           AND jsonb_array_length(editors) > 0
         ORDER BY (list_name ILIKE '%cross launch%'), created_at NULLS LAST
