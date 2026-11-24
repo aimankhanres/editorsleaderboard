@@ -376,7 +376,8 @@ export async function cuTaskStats(): Promise<{ tasks: number; withEditDone: numb
 }
 
 /**
- * Resolve internal keys ("AOG#103-W2") from the task mirror: the task whose name starts with "#103_W2" (and names
+ * Resolve internal keys ("AOG#103-W2") from the task mirror: the task whose name starts with "#103_W2" or a size and
+ * "#103_W2" ("16x9_#432_W6"; not resize copies like "AOG-29184_r#432_W6") (and names
  * product AOG after "pn"). "Meta Winners Cross Launch" copies are skipped when the original exists; of several,
  * the oldest (original) wins, like duplicate Brief IDs. Tasks with no Editor are not mirrored, so they don't match.
  */
@@ -389,8 +390,8 @@ export async function resolveInternalBriefs(keys: string[]): Promise<BriefInfo[]
     if (!k) continue;
     const rows = await q<{ task_id: string; name: string; url: string | null; brief_id: string | null; editors: { id: number; name: string }[] }>(
       `SELECT task_id, name, url, brief_id, editors FROM cu_tasks
-        WHERE substring(name from '^#([0-9]+)') = $1
-          AND ($2::int IS NULL OR name ~* ('^#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
+        WHERE name ~* ('^(\d{1,2}x\d{1,2}[_ -]*)?#0*' || $1 || '([^0-9]|$)')
+          AND ($2::int IS NULL OR name ~* ('^(\d{1,2}x\d{1,2}[_ -]*)?#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
           AND ($3::text IS NULL OR name ~* ('pn[^A-Za-z0-9]*' || $3 || '([^A-Za-z]|$)') OR brief_id ILIKE ($3 || '-%'))
           AND jsonb_array_length(editors) > 0
         ORDER BY (list_name ILIKE '%cross launch%'), created_at NULLS LAST
