@@ -3,6 +3,7 @@ import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { editorTasksPage, RateLimited } from '@/lib/clickup';
 import * as store from '@/lib/store';
+import { q } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -23,6 +24,15 @@ export async function GET(req: Request) {
   const started = Date.now();
   const url = new URL(req.url);
 
+  // ?diag=editors : every user found in an Editor field, with task counts (read-only; for mapping the roster)
+  if (url.searchParams.get('diag') === 'editors') {
+    await store.ensureTaskTables();
+    return NextResponse.json(await q(
+      `SELECT (e->>'id')::bigint AS id, max(e->>'name') AS name, COUNT(*)::int AS tasks,
+              COUNT(*) FILTER (WHERE COALESCE(edit_done, delivered) > now() - interval '30 days')::int AS done30,
+              mode() WITHIN GROUP (ORDER BY list_name) AS top_list
+         FROM cu_tasks, jsonb_array_elements(editors) e GROUP BY 1 ORDER BY tasks DESC`));
+  }
   if (url.searchParams.get('diag')) {
     const p = await editorTasksPage(Number(url.searchParams.get('since') ?? 0), Number(url.searchParams.get('page') ?? 0));
     return NextResponse.json({ n: p.tasks.length, lastPage: p.lastPage, sample: p.tasks.slice(0, 3) });
