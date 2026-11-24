@@ -63,7 +63,16 @@ export default function Capacity() {
     .map(t => (q ? { ...t, members: t.members.filter(m => m.name.toLowerCase().includes(q)) } : t))
     .filter(t => !q || t.members.length);
   const stale = data != null && week != null && data.week !== week;
-  const c = data?.company;
+  // Summary cards follow the selected tab (each person once, like the company totals)
+  const c = (() => {
+    if (!data || group === 'All') return data?.company;
+    const people = new Map<string, CapacityMember>();
+    for (const t of data.teams.filter(t => tabOf(t) === group)) for (const m of t.members) if (m.inClickUp && !people.has(m.key)) people.set(m.key, m);
+    const p = [...people.values()];
+    const sum = (f: (x: CapacityMember) => number) => p.reduce((a, x) => a + f(x), 0);
+    return { editors: p.length, done: sum(x => x.done), target: sum(x => x.target), expected: sum(x => x.expected),
+      remaining: sum(x => x.remaining), open: sum(x => x.open), behind: p.filter(x => x.pace === 'behind').length };
+  })();
 
   return (
     <main className="wrap">
