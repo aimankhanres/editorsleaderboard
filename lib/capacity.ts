@@ -27,12 +27,19 @@ export type CapacityTeam = {
   /** false: this team edits in another ClickUp workspace (Agency), so nothing is measured */
   measured: boolean;
   members: CapacityMember[]; done: number; target: number; expected: number; remaining: number; open: number;
+  /** editors in Resilia's ClickUp with nothing in their queue right now */
+  idle: number;
+  /** one week of this team's capacity, and how far the open queue is above it (0 = no backlog) */
+  weekCapacity: number; backlog: number;
   tracked: number; behind: number; history: { week: string; done: number; target: number }[];
 };
 export type CapacityPayload = {
+  /** week: Monday–Sunday; range: custom from–to (week/weekEnd are then the range's first and last day) */
+  mode: 'week' | 'range';
   week: string; weekEnd: string; days: string[]; today: string; timezone: string; current: boolean;
   teams: CapacityTeam[];
   company: { editors: number; done: number; target: number; expected: number; remaining: number; open: number; behind: number };
+  maxDays: number;
   mirror: { tasks: number; lastSync: string | null; caughtUp: boolean };
 };
 
@@ -42,14 +49,28 @@ export function mondayOf(ymd: string): string {
   return addDays(ymd, -dow);
 }
 
-export async function buildCapacity(weekParam: string | null): Promise<CapacityPayload> {
+export const MAX_RANGE_DAYS = 92;
+const dayCount = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5) + 1;
+const dowOf = (ymd: string) => (new Date(`${ymd}T00:00:00Z`).getUTCDay() + 6) % 7; // Mon=0
+
+/** opts.week: any day of a week (Mon–Sun). opts.from/to: a custom range (at most MAX_RANGE_DAYS). Neither: this week. */
+export async function buildCapacity(opts: { week?: string | null; from?: string | null; to?: string | null } = {}): Promise<CapacityPayload> {
   await ensureTaskTables();
   const today = todayIn(CAPACITY_TZ);
-  const week = mondayOf(weekParam ?? today);
-  const weekEnd = addDays(week, 6);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
-  const current = week === mondayOf(today);
-  const histFrom = addDays(week, -7 * (HISTORY_WEEKS - 1));
+  let mode: 'week' | 'range' = 'week';
+  let week: string, weekEnd: string;
+  if (opts.from && opts.to) {
+    mode = 'range';
+    [week, weekEnd] = opts.from <= opts.to ? [opts.from, opts.to] : [opts.to, opts.from];
+    if (dayCount(week, weekEnd) > MAX_RANGE_DAYS) week = addDays(weekEnd, -(MAX_RANGE_DAYS - 1));
+  } else {
+    week = mondayOf(opts.week ?? today);
+    weekEnd = addDays(week, 6);
+  }
+  const days = Array.from({ length: dayCount(week, weekEnd) }, (_, i) => addDays(week, i));
+  const current = week <= today && today <= weekEnd;
+  const histFrom = addDays(mondayOf(weekEnd), -7 * (HISTORY_WEEKS - 1));
+  const qFrom = week < histFrom ? week : histFrom;
   const ids = [...new Set(TEAMS.flatMap(t => t.members).map(m => m.id).filter((x): x is number => x != null))];
 
   // Finished tasks per editor, from the start of the history window to the end of this week
@@ -60,7 +81,7 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
       WHERE u = ANY($2::bigint[])
         AND COALESCE(edit_done, delivered) >= ($3::date - 1)::timestamp AT TIME ZONE 'UTC'
         AND COALESCE(edit_done, delivered) <  ($4::date + 2)::timestamp AT TIME ZONE 'UTC'`,
-    [CAPACITY_TZ, ids, histFrom, weekEnd],
+    [CAPACITY_TZ, ids, qFrom, weekEnd],
   );
   const openRows = await q<{ uid: string; n: string }>(
     `SELECT u::text AS uid, COUNT(*) AS n
@@ -74,18 +95,19 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
   const open = new Map(openRows.map(r => [Number(r.uid), Number(r.n)]));
   const byUser = new Map<number, { day: string; name: string; url: string }[]>();
   for (const r of doneRows) {
-    if (r.day < histFrom || r.day > weekEnd) continue;
+    if (r.day < qFrom || r.day > weekEnd) continue;
     const list = byUser.get(Number(r.uid)) ?? [];
     list.push({ day: r.day, name: r.name, url: r.url ?? `https://app.clickup.com/t/${r.task_id}` });
     byUser.set(Number(r.uid), list);
   }
 
-  // Days of the week that count as workdays: perWeek / perDay of them from Monday (14/2 = 7, 5/1 = Mon–Fri)
-  const elapsedIdx = current ? days.indexOf(today) : week > today ? -1 : 6; // index of the last day that counts
+  // Workdays: perWeek / perDay of them from Monday (14/2 = 7 days, 5/1 = Mon–Fri). Capacity = perDay per workday in the
+  // range; expected = perDay per workday up to today.
   const teams: CapacityTeam[] = TEAMS.map(team => {
     const workDays = Math.min(7, Math.round(team.kpi.perWeek / team.kpi.perDay));
-    const elapsedWork = Math.max(0, Math.min(workDays, elapsedIdx + 1));
-    const expectedFull = Math.min(team.kpi.perWeek, team.kpi.perDay * elapsedWork);
+    const work = days.filter(d => dowOf(d) < workDays);
+    const fullTarget = team.kpi.perDay * work.length;
+    const expectedFull = team.kpi.perDay * work.filter(d => d <= today).length;
     const measured = team.capacity !== false;
     const members: CapacityMember[] = team.members.map(mm => {
       const m = measured ? mm : { ...mm, id: null }; // agency teams: list people, measure nothing
@@ -93,7 +115,7 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
       const mine = all.filter(t => t.day >= week && t.day <= weekEnd).sort((a, b) => b.day.localeCompare(a.day));
       const counts = days.map(d => mine.filter(t => t.day === d).length);
       const done = mine.length;
-      const target = m.id ? team.kpi.perWeek : 0;
+      const target = m.id ? fullTarget : 0;
       const expected = m.id ? expectedFull : 0;
       const pace: Pace = !m.id ? 'none' : done >= target ? 'met' : done >= expected - team.kpi.perDay ? 'on' : 'behind';
       return {
@@ -114,7 +136,9 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
     return {
       id: team.id, name: team.name, group: team.group, kpi: team.kpi, workDays, measured, members,
       done: sum(x => x.done), target: sum(x => x.target), expected: sum(x => x.expected), remaining: sum(x => x.remaining),
-      open: sum(x => x.open), tracked: tracked.length, behind: tracked.filter(x => x.pace === 'behind').length, history,
+      open: sum(x => x.open), idle: tracked.filter(x => x.open === 0).length,
+      weekCapacity: tracked.length * team.kpi.perWeek,
+      backlog: Math.max(0, sum(x => x.open) - tracked.length * team.kpi.perWeek), tracked: tracked.length, behind: tracked.filter(x => x.pace === 'behind').length, history,
     };
   });
 
@@ -130,7 +154,7 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
   const mirrorState = await kvGet<{ since: number; page: number }>('tasks_sync');
   const stats = await q<{ n: string }>(`SELECT COUNT(*) n FROM cu_tasks`);
   return {
-    week, weekEnd, days, today, timezone: CAPACITY_TZ, current, teams,
+    mode, week, weekEnd, days, today, timezone: CAPACITY_TZ, current, teams, maxDays: MAX_RANGE_DAYS,
     company: {
       editors: ppl.length, done: s(x => x.done), target: s(x => x.target), expected: s(x => x.expected),
       remaining: s(x => x.remaining), open: s(x => x.open), behind: ppl.filter(x => x.pace === 'behind').length,
