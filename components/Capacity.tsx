@@ -168,7 +168,7 @@ export default function Capacity() {
             <Stat label="Edits done" value={`${c.done}`} sub={`of ${c.target} capacity · ${pct(c.done, c.target)}%`} />
             <Stat label={data.current ? 'Expected by today' : isRange ? 'Capacity' : 'Weekly capacity'} value={`${data.current ? c.expected : c.target}`}
               sub={data.current ? `${c.done >= c.expected ? '+' : ''}${c.done - c.expected} vs pace` : `${c.editors} editors tracked`} />
-            <Stat label="Spare capacity" value={`${c.remaining}`} sub={data.current ? `edits left to reach KPI ${period}` : 'edits short of KPI'} accent />
+            <Stat label="Left to KPI" value={`${c.remaining}`} sub={data.current ? `more edits needed to hit KPI ${period}` : 'edits short of KPI'} accent />
             <Stat label="Behind pace" value={`${c.behind}`} sub={`of ${c.editors} editors · ${c.open} tasks in queue`} warn={c.behind > 0} />
           </section>
           <section className="stats stats-3">
@@ -236,8 +236,8 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
   const fill = Math.min(100, pct(team.done, team.target));
   const mark = Math.min(100, pct(team.expected, team.target));
   const maxHist = Math.max(1, ...team.history.map(h => Math.max(h.done, h.target)));
-  const cols = { gridTemplateColumns: `minmax(210px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(90px, 1fr) 54px 66px 100px` };
-  const minW = 210 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 486;
+  const cols = { gridTemplateColumns: `minmax(210px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(90px, 1fr) 78px 66px 100px` };
+  const minW = 210 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 510;
   const members = [...team.members].sort((a, b) => Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
 
   return (
@@ -254,7 +254,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
           <div className="cap-summary">
             <div className="cap-progress" title={data.current ? `Expected by today: ${team.expected}` : undefined}>
               <div className="cap-bar"><span style={{ width: `${fill}%` }} />{data.current && <i style={{ left: `${mark}%` }} />}</div>
-              <div className="cap-nums"><b>{team.done}</b> / {team.target} edits · <b>{team.remaining}</b> spare · <b>{team.open}</b> in queue</div>
+              <div className="cap-nums"><b>{team.done}</b> / {team.target} edits · <b>{team.remaining}</b> left to KPI · <b>{team.open}</b> in queue</div>
             </div>
             <div className="spark" aria-label="Last 8 weeks, edits done vs capacity">
               {team.history.map(h => (
@@ -285,7 +285,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
               ))}
               <span role="columnheader" className="r">Done</span>
               <span role="columnheader">Progress</span>
-              <span role="columnheader" className="r">Spare</span>
+              <span role="columnheader" className="r" title="More edits needed to hit the KPI (KPI − done)">Left to KPI</span>
               <span role="columnheader" className="r" title="Tasks assigned to this editor (last 45 days) that aren't finished yet">In queue</span>
               <span role="columnheader">Status</span>
             </div>
