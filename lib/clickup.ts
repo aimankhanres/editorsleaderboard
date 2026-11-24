@@ -264,3 +264,62 @@ export async function briefsEditedBy(userId: number): Promise<{ tasks: number; b
   }
   return { tasks, briefs };
 }
+
+// ------------------------------------------------------------------ task mirror (capacity + #N matching)
+
+/** Date fields read from every task (ms since epoch, as strings in the API) */
+const F_EDIT_COMPLETE = 'e022405a-973d-41c9-bd6d-af5bfed99d68'; // "Edit Complete Date": editor finished
+const F_DELIVERED = '8319778d-0b8e-4406-8db2-79075b773b85'; // "Asset Delivered Date"
+const F_ASSIGNED = '0a93bbd8-98df-4ed6-90ce-7c9cb995b42d'; // "Editor Assigned Date"
+
+export type MirroredTask = {
+  taskId: string; name: string; url: string; listId: string | null; listName: string | null;
+  status: string | null; statusType: string | null; editors: { id: number; name: string }[];
+  briefId: string | null; editDone: number | null; delivered: number | null; assigned: number | null;
+  created: number | null; updated: number | null; closed: number | null;
+};
+
+type CuTaskFull = CuTask & {
+  status?: { status?: string; type?: string };
+  list?: { id?: string; name?: string };
+  date_updated?: string; date_closed?: string | null; date_done?: string | null;
+};
+
+const ms = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+function mirror(t: CuTaskFull): MirroredTask {
+  const f = (id: string) => t.custom_fields?.find(c => c.id === id)?.value;
+  const editorField = t.custom_fields?.find(c => c.id === EDITOR_FIELD_ID)?.value;
+  const editors = (Array.isArray(editorField) ? editorField : [])
+    .filter((u): u is { id: number; username?: string; email?: string } => !!u && typeof u === 'object' && 'id' in u)
+    .map(u => ({ id: Number(u.id), name: u.username || u.email || `User ${u.id}` }));
+  const brief = f(cfg.cu.briefFieldId);
+  return {
+    taskId: t.id, name: t.name, url: t.url || `https://app.clickup.com/t/${t.id}`,
+    listId: t.list?.id ?? null, listName: t.list?.name ?? null,
+    status: t.status?.status ?? null, statusType: t.status?.type ?? null, editors,
+    briefId: typeof brief === 'string' && brief.trim() ? brief.trim() : null,
+    editDone: ms(f(F_EDIT_COMPLETE)), delivered: ms(f(F_DELIVERED)), assigned: ms(f(F_ASSIGNED)),
+    created: ms(t.date_created), updated: ms(t.date_updated), closed: ms(t.date_done ?? t.date_closed),
+  };
+}
+
+/**
+ * One page (100) of workspace tasks that have someone in the Editor field and were updated after `sinceMs`,
+ * oldest update first, so tasks edited while we page move to the end instead of being skipped.
+ */
+export async function editorTasksPage(sinceMs: number, page: number, opts: { reverse?: boolean } = {}) {
+  const filter = JSON.stringify([{ field_id: EDITOR_FIELD_ID, operator: 'IS NOT NULL' }]);
+  const params = new URLSearchParams({
+    include_closed: 'true', subtasks: 'true', order_by: 'updated', reverse: String(opts.reverse ?? true),
+    date_updated_gt: String(sinceMs), page: String(page), custom_fields: filter,
+  });
+  const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
+  if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
+  const tasks = (body.tasks ?? []).map(mirror);
+  return { tasks, lastPage: body.last_page !== false || tasks.length === 0 };
+}
