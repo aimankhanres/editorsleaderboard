@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { editorTasksPage, RateLimited } from '@/lib/clickup';
+import { agencyAccessCheck, editorTasksPage, RateLimited } from '@/lib/clickup';
 import * as store from '@/lib/store';
 import { q } from '@/lib/db';
 
@@ -24,6 +24,8 @@ export async function GET(req: Request) {
   const started = Date.now();
   const url = new URL(req.url);
 
+  // ?diag=agency : what CLICKUP_AGENCY_TOKEN can see in the agency workspace (read-only)
+  if (url.searchParams.get('diag') === 'agency') return NextResponse.json(await agencyAccessCheck());
   // ?diag=editors : every user found in an Editor field, with task counts (read-only; for mapping the roster)
   if (url.searchParams.get('diag') === 'editors') {
     await store.ensureTaskTables();

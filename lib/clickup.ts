@@ -323,3 +323,43 @@ export async function editorTasksPage(sinceMs: number, page: number, opts: { rev
   const tasks = (body.tasks ?? []).map(mirror);
   return { tasks, lastPage: body.last_page !== false || tasks.length === 0 };
 }
+
+// ------------------------------------------------------------------ agency workspace (read-only check)
+
+/**
+ * What CLICKUP_AGENCY_TOKEN can see: every workspace, and for each one other than ours, its spaces, how many tasks
+ * the token can read, and which custom fields those tasks carry (to find the Editor / Brief ID fields). Read-only.
+ */
+export async function agencyAccessCheck(): Promise<Record<string, unknown>> {
+  const token = process.env.CLICKUP_AGENCY_TOKEN?.trim();
+  if (!token) return { configured: false, hint: 'Add CLICKUP_AGENCY_TOKEN in Vercel → Settings → Environment Variables, then redeploy.' };
+  const get = async (path: string) => {
+    const res = await fetch(`${BASE}${path}`, { headers: { Authorization: token }, cache: 'no-store' });
+    return { status: res.status, body: await res.json().catch(() => null) as Record<string, unknown> | null };
+  };
+  const user = await get('/user');
+  const teams = await get('/team');
+  const list = ((teams.body?.teams ?? []) as { id: string; name: string }[]);
+  const out: Record<string, unknown>[] = [];
+  for (const t of list) {
+    if (t.id === cfg.cu.teamId) { out.push({ id: t.id, name: t.name, note: 'our workspace' }); continue; }
+    const spaces = await get(`/team/${t.id}/space?archived=false`);
+    const tasks = await get(`/team/${t.id}/task?include_closed=true&subtasks=true&page=0`);
+    const ts = ((tasks.body?.tasks ?? []) as CuTask[]);
+    const fields = new Map<string, { id: string; type: string; filled: number }>();
+    for (const task of ts) for (const f of task.custom_fields ?? []) {
+      const e = fields.get(f.name) ?? { id: f.id, type: f.type, filled: 0 };
+      if (f.value != null && f.value !== '') e.filled++;
+      fields.set(f.name, e);
+    }
+    out.push({
+      id: t.id, name: t.name,
+      spaces: spaces.status === 200 ? ((spaces.body?.spaces ?? []) as { name: string }[]).map(s => s.name) : `HTTP ${spaces.status}`,
+      tasksOnFirstPage: tasks.status === 200 ? ts.length : `HTTP ${tasks.status}: ${JSON.stringify(tasks.body).slice(0, 160)}`,
+      sampleTasks: ts.slice(0, 5).map(x => x.name),
+      customFields: Object.fromEntries([...fields].sort((a, b) => b[1].filled - a[1].filled)),
+    });
+  }
+  const u = user.body?.user as { username?: string } | undefined;
+  return { configured: true, tokenUser: u?.username ?? `HTTP ${user.status}`, workspaces: out };
+}
