@@ -9,7 +9,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 20
     steps:
       - name: Call /api/sync
         env:
@@ -32,3 +32,21 @@ jobs:
             fi
             echo "::error::Sync failed with HTTP $code"; exit 1
           done
+      - name: Call /api/tasks-sync (ClickUp task mirror for capacity and #N matching)
+        if: ${{ !cancelled() }}
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$SYNC_URL" ]; then echo "SYNC_URL not set, skipping"; exit 0; fi
+          TASKS_URL="${SYNC_URL%/sync}/tasks-sync"
+          rm -f body.json
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 330 -H "Authorization: Bearer $CRON_SECRET" "$TASKS_URL") || true
+          code=${code:-000}
+          cat body.json 2>/dev/null || true; echo
+          if [ "$code" = "200" ]; then exit 0; fi
+          # Timeouts and ClickUp hiccups: it saves its place after every page, so the next run continues
+          if [ "$code" = "000" ] || [ "$code" = "504" ] || grep -qE 'ClickUp (429|5[0-9]{2})|FUNCTION_INVOCATION_TIMEOUT' body.json 2>/dev/null; then
+            echo "::warning::Task sync hit a temporary problem (HTTP $code); the next run continues"; exit 0
+          fi
+          echo "::error::Task sync failed with HTTP $code"; exit 1

@@ -374,3 +374,47 @@ export async function cuTaskStats(): Promise<{ tasks: number; withEditDone: numb
     `SELECT COUNT(*) n, COUNT(edit_done) d, to_char(MAX(updated_at), 'YYYY-MM-DD"T"HH24:MI') u FROM cu_tasks`);
   return { tasks: Number(r[0].n), withEditDone: Number(r[0].d), newestUpdate: r[0].u };
 }
+
+/**
+ * Resolve internal keys ("AOG#103-W2") from the task mirror: the task whose name starts with "#103_W2" (and names
+ * product AOG after "pn"). "Meta Winners Cross Launch" copies are skipped when the original exists; of several,
+ * the oldest (original) wins, like duplicate Brief IDs. Tasks with no Editor are not mirrored, so they don't match.
+ */
+export async function resolveInternalBriefs(keys: string[]): Promise<BriefInfo[]> {
+  const { parseInternalKey } = await import('./briefs');
+  await ensureTaskTables();
+  const out: BriefInfo[] = [];
+  for (const key of keys) {
+    const k = parseInternalKey(key);
+    if (!k) continue;
+    const rows = await q<{ task_id: string; name: string; url: string | null; brief_id: string | null; editors: { id: number; name: string }[] }>(
+      `SELECT task_id, name, url, brief_id, editors FROM cu_tasks
+        WHERE substring(name from '^#([0-9]+)') = $1
+          AND ($2::int IS NULL OR name ~* ('^#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
+          AND ($3::text IS NULL OR name ~* ('pn[^A-Za-z0-9]*' || $3 || '([^A-Za-z]|$)') OR brief_id ILIKE ($3 || '-%'))
+          AND jsonb_array_length(editors) > 0
+        ORDER BY (list_name ILIKE '%cross launch%'), created_at NULLS LAST
+        LIMIT 1`,
+      [String(k.num), k.week, k.product],
+    );
+    const r = rows[0];
+    out.push(r
+      ? {
+          briefId: key, taskId: r.task_id, taskName: `${r.brief_id ? `${r.brief_id} · ` : ''}${r.name}`,
+          taskUrl: r.url ?? `https://app.clickup.com/t/${r.task_id}`,
+          editors: r.editors.map(e => ({ key: `u:${e.id}`, name: e.name, avatar: null })), status: 'ok',
+        }
+      : { briefId: key, taskId: null, taskName: null, taskUrl: null, editors: [], status: 'not_found' });
+  }
+  return out;
+}
+
+/** Queue internal keys that were not found (e.g. before the task mirror finished its first backfill). */
+export async function requeueInternalBriefs(): Promise<number> {
+  const rows = await q<{ n: string }>(
+    `WITH u AS (UPDATE brief_map SET status = 'pending', fetched_at = 'epoch'
+       WHERE brief_id ~ '^[A-Z]*#[0-9]+(-W[0-9]+)?$' AND brief_id !~ '^#[0-9]+$' RETURNING 1)
+     SELECT COUNT(*) AS n FROM u`,
+  );
+  return Number(rows[0]?.n ?? 0);
+}

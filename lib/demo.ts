@@ -8,7 +8,7 @@ import type { ChannelView } from './channels';
 import type { AdAgg, BriefInfo, LeaderboardPayload, RosterEntry } from './types';
 
 // Demo uses the real team rosters (so both boards fill) with random numbers. Local preview only.
-const MEMBERS = TEAMS.flatMap(t => t.members);
+const MEMBERS = TEAMS.flatMap(t => t.members).filter(m => m.id != null);
 
 function rng(seed: number) {
   return () => {

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 /**
  * Optional shared-password gate (HTTP Basic auth, any username). Off unless APP_PASSWORD is set.
  * Replace with Google sign-in (e.g. Auth.js restricted to the company domain) if that's the decision.
- * /api/sync and /api/clickup-webhook have their own secrets and are not gated here.
+ * /api/sync, /api/tasks-sync and /api/clickup-webhook have their own secrets and are not gated here.
  */
 export function middleware(req: NextRequest) {
   const password = process.env.APP_PASSWORD;
@@ -19,4 +19,4 @@ export function middleware(req: NextRequest) {
   });
 }
 
-export const config = { matcher: ['/((?!api/sync|api/clickup-webhook|_next/static|_next/image|favicon.ico).*)'] };
+export const config = { matcher: ['/((?!api/sync|api/tasks-sync|api/clickup-webhook|_next/static|_next/image|favicon.ico).*)'] };

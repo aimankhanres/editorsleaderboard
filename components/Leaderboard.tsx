@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import { ago, initials, money, monthLabel } from '@/lib/format';
 import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
+import Nav from './Nav';
 
 const POLL_MS = 60_000;
 
@@ -76,6 +77,11 @@ export default function Leaderboard() {
   const teams = data?.teams ?? [];
   const current: View = view && (view === 'review' || teams.some(t => t.id === view)) ? view : teams[0]?.id ?? 'review';
   const team = teams.find(t => t.id === current) ?? null;
+  const groups = [...new Set(teams.map(t => t.group ?? ''))];
+  // The review tab keeps whichever group was last shown
+  const [lastGroup, setLastGroup] = useState('');
+  const group = team ? team.group ?? '' : lastGroup || groups[0] || '';
+  useEffect(() => { if (team) setLastGroup(team.group ?? ''); }, [team]);
   const reviewCount = data?.review.length ?? 0;
   const label = viewLabel(data?.channel ?? channel);
   const stale = data != null && (data.channel !== channel
@@ -86,12 +92,15 @@ export default function Leaderboard() {
   return (
     <main className="wrap">
       <header className="top">
-        <div>
+        <div className="title-row">
+          <Nav />
+          <div>
           <h1>Editor Leaderboard</h1>
           <p className="sub">
             Ad spend on ads built from each editor&apos;s briefs · <strong>{label === 'All' ? 'Meta + Google' : label}</strong>
             {label !== 'Meta' ? ' (Google: video campaigns only)' : ''}
           </p>
+          </div>
         </div>
         <div className="sync">
           {data?.demo && <span className="pill demo">Demo data</span>}
@@ -104,8 +113,16 @@ export default function Leaderboard() {
         </div>
       </header>
 
+      {groups.length > 1 && (
+        <div className="groups seg small" role="tablist" aria-label="Team group">
+          {groups.map(g => (
+            <button key={g} role="tab" aria-selected={group === g} className={group === g ? 'on' : ''}
+              onClick={() => { const first = teams.find(t => (t.group ?? '') === g); if (first) setView(first.id); }}>{g}</button>
+          ))}
+        </div>
+      )}
       <nav className="teams" role="tablist" aria-label="Team">
-        {teams.map(t => (
+        {teams.filter(t => (t.group ?? '') === group).map(t => (
           <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
             {t.name} <span className="count">{t.editors.length}</span>
           </button>
@@ -219,7 +236,10 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
           {(showIdle || q) && (
             <ul className="idle-list">
               {idle.filter(match).map(e => (
-                <li key={e.key}><Avatar name={e.name} src={e.avatar} size={30} /><span className="name">{e.name}</span><span className="role">{e.role}</span></li>
+                <li key={e.key} className={e.inClickUp === false ? 'not-cu' : ''}>
+                  <Avatar name={e.name} src={e.avatar} size={30} /><span className="name">{e.name}</span>
+                  <span className="role">{e.inClickUp === false ? 'Not in Resilia ClickUp · agency workspace' : e.role}</span>
+                </li>
               ))}
             </ul>
           )}

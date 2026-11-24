@@ -16,6 +16,10 @@ Details:
 - Use **ad-level** rows only. Never sum ad sets or campaigns (double-counting).
 - Brief ID regex: `(OO|AOG|CIN)[-_ ]?\d+` (Oregano, Garlic, Cinnamon), case-insensitive, normalised to
   `PREFIX-<digits>`; a prefix glued to a letter (`rOO-`, `rCIN-`, `iCIN-`) is ignored (see `lib/briefs.ts`).
+- Internal briefs are named by number: `#103_W2_cs:MIA_pn: AOG_Offer…` (no OO-/AOG- ID in the ad). Key `AOG#103-W2`
+  (product from `pn`, optional; week optional; needs `_W<n>` or `_cs` after the number, so `… .mp4 #3` is ignored).
+  Resolved from the task mirror `cu_tasks` (task name starts `#103_W2`, editor set, not a "Cross Launch" copy, oldest
+  first), not the ClickUp API. `GET /api/sync?requeue=internal` re-resolves them.
 - Bare-number fallback: an ad name with no prefixed brief ID (`PDP + b.h [23755 vh]`, `102186 PDP`) first uses a prefix glued to the number (`RSOO-4547` -> OO-4547, exact),
   else gets
   each standalone 4-6 digit number as `#23755` (not years 2010-2039, prices, dimensions, or numbers glued to a letter).
@@ -37,7 +41,7 @@ Details:
 
 ## Teams (what the dashboard shows)
 
-- Three boards, **Resizing**, **Iterations** and **Rips** (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
+- Boards: **Resizing**, **Iterations** and **Rips** (Production group), plus the Internal, Variations and Agency teams from the org chart. Rips (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
   credited with all their ClickUp work for now, a rip-only task filter is still to be defined since nothing in
   ClickUp marks rips yet), defined in
   `lib/teams.ts` by ClickUp user id. Only listed
@@ -45,6 +49,18 @@ Details:
   are within each team (`buildTeams`). Attribution itself is unchanged: an editor's spend is everything
   credited to them via the Editor field, whatever the task type.
 - To add/move someone, edit `lib/teams.ts` and push.
+
+## Capacity screen (`/capacity`, burger menu)
+
+- Edits finished per editor per day/week vs team KPI (`kpi` in `lib/teams.ts`): Resizing 2/day, 14/week; every other
+  team (incl. Iterations, Rips) 1/day, 5/week. Workdays = perWeek / perDay from Monday (7 for Resizing, Mon–Fri else).
+- Source: `cu_tasks`, a mirror of every ClickUp task with an Editor, kept by `/api/tasks-sync` (2nd step of the GitHub
+  workflow; incremental by date_updated, oldest first, resumable; state in `kv.tasks_sync`). A task is done on its
+  "Edit Complete Date" (fallback "Asset Delivered Date"), bucketed in `CAPACITY_TIMEZONE` (default Asia/Karachi).
+  Two editors on a task: counts for both. "Open" = Editor Assigned Date in the last 45 days, not finished.
+- Teams: all editing teams from the Nov 2026 org chart, grouped Production / Internal / Variations / Agency. Agency
+  editors are mostly not in Resilia's ClickUp (`id: null`): listed, but nothing can be counted or credited.
+- The attribution page shows the same teams, with a group switcher above the team tabs.
 
 ## Channels
 

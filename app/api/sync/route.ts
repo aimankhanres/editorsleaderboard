@@ -6,7 +6,7 @@ import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { briefsEditedBy, clickupCheck, lookupBriefs } from '@/lib/clickup';
 import { buildLeaderboard } from '@/lib/leaderboard';
 import { TEAMS } from '@/lib/teams';
-import { extractBriefIds } from '@/lib/briefs';
+import { extractBriefIds, isInternalKey } from '@/lib/briefs';
 import { allocate, buildTeams } from '@/lib/leaderboard';
 import * as store from '@/lib/store';
 import { VIEWS, snapPrefix, viewChannels } from '@/lib/channels';
@@ -31,6 +31,10 @@ export async function GET(req: Request) {
   // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
   if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck(url.searchParams.get('brief') || 'AOG-10150'));
   // ?requeue=other : mark 6-digit "not found" briefs for a fresh lookup (resize fallback). Next syncs pick them up.
+  if (url.searchParams.get('requeue') === 'internal') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    return NextResponse.json({ requeued: await store.requeueInternalBriefs() });
+  }
   if (url.searchParams.get('requeue') === 'other') {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
     return NextResponse.json({ requeued: await store.requeueOtherWorkspaceBriefs() });
@@ -85,6 +89,7 @@ export async function GET(req: Request) {
     const board = lb.teams.find(t => t.id === team.id)!;
     const out = [];
     for (const m of team.members.slice(offset, offset + limit)) {
+      if (!m.id) { out.push({ editor: m.name, skipped: 'not in ClickUp' }); continue; }
       const row = board.editors.find(e => e.key === `u:${m.id}`);
       const credited = row?.briefs ?? [];
       if (Date.now() > deadline) { out.push({ editor: m.name, skipped: 'time budget' }); continue; }
@@ -138,7 +143,11 @@ export async function GET(req: Request) {
     ads = new Set(rows.map(r => r.adId)).size;
 
     // 3. ClickUp lookups for new / stale briefs
-    const todo = await store.briefsNeedingLookup(from, cfg.maxLookups);
+    const todoAll = await store.briefsNeedingLookup(from, cfg.maxLookups);
+    // Internal "#103_W2" briefs are matched by task name from the task mirror (cu_tasks), not the ClickUp API
+    const internal = todoAll.filter(isInternalKey);
+    if (internal.length) await store.upsertBriefs(await store.resolveInternalBriefs(internal));
+    const todo = todoAll.filter(k => !isInternalKey(k));
     const res = await lookupBriefs(todo, deadline - 20_000);
     lookups = res.lookups;
     await store.upsertBriefs(res.resolved);

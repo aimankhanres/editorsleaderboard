@@ -35,11 +35,14 @@ export type EditorRow = {
   rank: number;
   prevRank: number | null;
   role?: string;
+  /** false: not in Resilia's ClickUp workspace, so nothing can be credited */
+  inClickUp?: boolean;
 };
 
 export type TeamBoard = {
   id: string;
   name: string;
+  group?: string;
   /** Spend credited to this team's members */
   spend: number;
   /** Distinct winner ads across the team */

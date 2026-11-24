@@ -3,9 +3,9 @@ import { addDays, todayIn } from './dates';
 import type {
   AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard, WinnerAd,
 } from './types';
-import { TEAMS, type Team } from './teams';
+import { TEAMS, memberKey, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
-import { isBareNumber, isOtherWorkspaceBrief } from './briefs';
+import { isBareNumber, isInternalKey, isOtherWorkspaceBrief } from './briefs';
 
 type Acc = { key: string; name: string; avatar: string | null; active: boolean; spend: number; ads: Set<string>;
   briefs: Map<string, { info: BriefInfo; spend: number; ads: Set<string> }>; winners: Map<string, WinnerAd> };
@@ -42,7 +42,8 @@ export function allocate(
   // written in brackets, e.g. "Lucylen (Lucy) Pagado" matches "Lucylen" and "Lucy".
   const rosterFirst = new Map<string, string[]>(); // name token -> editor keys
   const watchNames = new Map<string, string>();
-  for (const m of TEAMS.flatMap(t => t.members)) {
+  for (const m of TEAMS.filter(t => t.nameCheck).flatMap(t => t.members)) {
+    if (!m.id) continue;
     const key = `u:${m.id}`;
     watchNames.set(key, m.name);
     const names = [firstName(m.name.replace(/\(.*?\)/g, ' ')), ...[...m.name.matchAll(/\(([^)]+)\)/g)].map(x => firstName(x[1]))];
@@ -97,6 +98,8 @@ export function allocate(
         review.push({ ...base, kind: 'task_not_found', detail: info.taskName }); // bare number matching several briefs
       } else if (info.status === 'not_found' && isOtherWorkspaceBrief(briefId)) {
         review.push({ ...base, kind: 'other_workspace', detail: 'Original brief is in another workspace; no resize task found' });
+      } else if (info.status === 'not_found' && isInternalKey(briefId)) {
+        review.push({ ...base, kind: 'task_not_found', detail: `No ClickUp task with an Editor is named ${briefId.replace(/^[A-Z]*/, '').replace('-W', '_W')}…` });
       } else if (info.status === 'not_found' && isBareNumber(briefId)) {
         review.push({ ...base, kind: 'task_not_found', detail: `No OO-/AOG-/CIN-${briefId.slice(1)} task in ClickUp` });
       } else if (info.status === 'not_found') {
@@ -163,22 +166,22 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
   const byKey = new Map(editors.map(e => [e.key, e]));
   return teams.map(team => {
     const rows = team.members.map(m => {
-      const key = `u:${m.id}`;
+      const key = memberKey(m);
       const e = byKey.get(key);
       return {
-        key, name: m.name, role: m.role, avatar: e?.avatar ?? null, active: true,
+        key, name: m.name, role: m.role, avatar: e?.avatar ?? null, active: true, inClickUp: m.id != null,
         spend: e?.spend ?? 0, ads: e?.ads ?? 0, briefs: e?.briefs ?? [], winners: e?.winners ?? [], share: 0,
       };
     });
     rows.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
     const spend = rows.reduce((s, r) => s + r.spend, 0);
     const prevOrder = team.members
-      .map(m => ({ key: `u:${m.id}`, spend: prevSpend.get(`u:${m.id}`) ?? 0 }))
+      .map(m => ({ key: memberKey(m), spend: prevSpend.get(memberKey(m)) ?? 0 }))
       .filter(r => r.spend > 0)
       .sort((a, b) => b.spend - a.spend);
     const prevRank = new Map(prevOrder.map((r, i) => [r.key, i + 1]));
     return {
-      id: team.id, name: team.name, spend: round2(spend),
+      id: team.id, name: team.name, group: team.group, spend: round2(spend),
       winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
       editors: rows.map((r, i) => ({
         ...r, share: spend ? r.spend / spend : 0, rank: i + 1,
