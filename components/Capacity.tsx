@@ -170,7 +170,9 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
             </div>
           </div>
         ) : (
-          <div className="cap-summary"><span className="muted">Not in Resilia&apos;s ClickUp, so tasks can&apos;t be counted yet</span></div>
+          <div className="cap-summary"><span className="muted">{team.measured
+            ? 'Not in Resilia\'s ClickUp, so edits can\'t be counted'
+            : 'Agency team: edits happen in the agency\'s ClickUp workspace, so they can\'t be counted here'}</span></div>
         )}
         <span className="chev">{shown ? '▾' : '▸'}</span>
       </button>
@@ -193,7 +195,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
             </div>
             {members.map(m => <MemberRow key={m.key} m={m} team={team} data={data} />)}
           </div>
-          {untracked > 0 && <p className="cap-note">{untracked} editor{untracked === 1 ? '' : 's'} on this team {untracked === 1 ? 'is' : 'are'} not in Resilia&apos;s ClickUp workspace (agency workspace), so their edits can&apos;t be counted here.</p>}
+          {untracked > 0 && team.measured && <p className="cap-note">{untracked} editor{untracked === 1 ? '' : 's'} on this team {untracked === 1 ? 'is' : 'are'} not in Resilia&apos;s ClickUp workspace (agency workspace), so their edits can&apos;t be counted here.</p>}
         </div>
       )}
     </section>
@@ -208,7 +210,7 @@ function MemberRow({ m, team, data }: { m: CapacityMember; team: CapacityTeam; d
       <button className="cap-row" role="row" onClick={() => m.inClickUp && setOpen(o => !o)} aria-expanded={m.inClickUp ? open : undefined} disabled={!m.inClickUp}>
         <span className="c-ed" role="cell">
           <span className="avatar" style={{ width: 30, height: 30, fontSize: 11.5 }}>{initials(m.name)}</span>
-          <span className="who"><span className="name">{m.name}</span><span className="role">{m.inClickUp ? m.role : 'Not in Resilia ClickUp'}</span></span>
+          <span className="who"><span className="name">{m.name}</span><span className="role">{m.inClickUp ? m.role : team.measured ? 'Not in Resilia ClickUp' : `${m.role} · agency workspace`}</span></span>
         </span>
         {m.days.map((n, i) => {
           const d = data.days[i];

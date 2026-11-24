@@ -11,7 +11,12 @@
 export type TeamMember = { id: number | null; name: string; role: string };
 export type TeamKpi = { perDay: number; perWeek: number };
 export type TeamGroup = 'Production' | 'Internal' | 'Variations' | 'Agency';
-export type Team = { id: string; name: string; group: TeamGroup; kpi: TeamKpi; nameCheck?: boolean; members: TeamMember[] };
+export type Team = {
+  id: string; name: string; group: TeamGroup; kpi: TeamKpi; nameCheck?: boolean;
+  /** false: edits happen in another ClickUp workspace, so capacity can't be measured here (Agency teams) */
+  capacity?: boolean;
+  members: TeamMember[];
+};
 
 const RESIZE = 'Video Editor – Resizing';
 const GOOGLE = 'Video Editor – Google';
@@ -95,7 +100,7 @@ export const TEAMS: Team[] = [
       { id: 106888872, name: 'Adrian Eryz San Juan', role: 'Senior Editor' },
       { id: 106899956, name: 'Israel Adeyemi', role: 'Senior Editor' },
       { id: 101096563, name: 'Faraz Ali Shaikh', role: 'Senior Editor' },
-      { id: 101072103, name: 'Zeeshan', role: 'Base Editor' }, // "Zeeshan" in ClickUp (zeeshan.ahmed); confirm
+      { id: 101072103, name: 'Zeeshan', role: 'Base Editor' }, // "Zeeshan" (zeeshan.ahmed@) in ClickUp: Oregano tasks
       { id: 99954521, name: 'Huraira Jalil', role: 'Base Editor' },
       { id: 106919312, name: 'Nora Rakaiby', role: 'Base Editor' },
       { id: 100998803, name: 'Angelo Baltazar', role: 'Base Editor' },
@@ -112,7 +117,7 @@ export const TEAMS: Team[] = [
       { id: 314490502, name: 'Ashutosh Bisht', role: 'Base Editor' },
       { id: 106902216, name: 'Sakshi Bisht', role: 'Base Editor' },
       { id: 101084642, name: 'Muhammad Issa', role: 'Base Editor' }, // "Mhamad Issa" in ClickUp
-      { id: null, name: 'John', role: 'Base Editor' }, // several Johns in ClickUp; confirm which
+      { id: 101069837, name: 'John Paulo Cataquiz', role: 'Base Editor' }, // John Paulo Cataquiz in ClickUp: the John with Oregano tasks
     ],
   },
   {
@@ -174,12 +179,12 @@ export const TEAMS: Team[] = [
     id: 'oregano-variations', name: 'Oregano Variations', group: 'Variations', kpi: KPI_STANDARD,
     members: [
       { id: 14710559, name: 'Abdullah Sakhi', role: 'Lead Editor' },
-      { id: null, name: 'Kim', role: 'Senior Editor' }, // Kim Estrella or Kim Robes? confirm
-      { id: null, name: 'Abdul Rehman', role: 'Senior Editor' }, // three Abdul Rehmans in ClickUp; confirm
+      { id: 101069806, name: 'Kim Estrella', role: 'Senior Editor' }, // Kim Estrella in ClickUp: Oregano work (Kim Robes is inactive)
+      { id: 106875716, name: 'Abdul Rehman', role: 'Senior Editor' }, // abdul.rehman@ in ClickUp: the one working in Oregano Variation
       { id: 50112612, name: 'Fazal', role: 'Base Editor' },
       { id: 101097537, name: 'Safdar', role: 'Base Editor' }, // "Muhammad Safdar" in ClickUp
-      { id: 106839172, name: 'Arslan Shaukat', role: 'Base Editor' }, // "Arslan" on the org chart; confirm
-      { id: 106859554, name: 'Ayyaz Bin Mumtaz', role: 'Base Editor' }, // "Ayyaz" on the org chart; confirm
+      { id: 106839172, name: 'Arslan Shaukat', role: 'Base Editor' }, // "Arslan" on the org chart; works in Oregano Variation
+      { id: 106859554, name: 'Ayyaz Bin Mumtaz', role: 'Base Editor' }, // "Ayyaz" on the org chart; works in Oregano Variation
     ],
   },
   {
@@ -206,9 +211,9 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'oregano-agency', name: 'Oregano Agency', group: 'Agency', kpi: KPI_STANDARD,
+    id: 'oregano-agency', name: 'Oregano Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
     members: [
-      { id: null, name: 'Rehan', role: 'Lead Editor' },
+      { id: 89314312, name: 'Rehan', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'DJ Bunda', role: 'Senior Editor' },
       { id: null, name: 'Muhammad Khan', role: 'Senior Editor' },
       { id: null, name: 'Cesar Aviles', role: 'Base Editor' },
@@ -230,11 +235,11 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'garlic-agency', name: 'Garlic Agency', group: 'Agency', kpi: KPI_STANDARD,
+    id: 'garlic-agency', name: 'Garlic Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
     members: [
-      { id: null, name: 'Rehan', role: 'Lead Editor' },
+      { id: 89314312, name: 'Rehan', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Ahmad Muhmmad Khabir', role: 'Senior Editor' },
-      { id: null, name: 'Ibbad', role: 'Senior Editor' },
+      { id: 101096565, name: 'Ibbad', role: 'Senior Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Mohtashim', role: 'Base Editor' },
       { id: null, name: 'Kevin Puuhlet', role: 'Base Editor' },
       { id: null, name: 'Ramsha Zia', role: 'Base Editor' },
@@ -253,21 +258,21 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'cin-agency', name: 'Cin Agency', group: 'Agency', kpi: KPI_STANDARD,
+    id: 'cin-agency', name: 'Cin Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
     members: [
-      { id: null, name: 'Arifeen Ahmad', role: 'Lead Editor' },
-      { id: null, name: 'Saharish Saleem', role: 'Senior Editor' },
+      { id: 112426642, name: 'Arifeen Ahmad', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
+      { id: 106854520, name: 'Saharish Saleem', role: 'Senior Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Sabina K', role: 'Senior Editor' },
       { id: null, name: 'Andre Tan', role: 'Base Editor' },
       { id: null, name: 'John Lee Capio Corpuz', role: 'Base Editor' },
       { id: null, name: 'Sana Tasleem', role: 'Base Editor' },
-      { id: null, name: 'Tayyab Ejaz', role: 'Base Editor' },
+      { id: 106856548, name: 'Tayyab Ejaz', role: 'Base Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Zeeshan Waheed', role: 'Base Editor' },
-      { id: null, name: 'Ronalyn Malemit', role: 'Base Editor' },
-      { id: null, name: 'Natasha Brown', role: 'Base Editor' },
+      { id: 106868917, name: 'Ronalyn Malemit', role: 'Base Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
+      { id: 106870043, name: 'Natasha Brown', role: 'Base Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Shaina Gavino', role: 'Base Editor' },
-      { id: null, name: 'Jullie Ortega-Postrado', role: 'Base Editor' },
-      { id: null, name: 'Elseiyah Navales', role: 'Base Editor' },
+      { id: 101077289, name: 'Jullie Ortega-Postrado', role: 'Base Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
+      { id: 106867156, name: 'Elseiyah Navales', role: 'Base Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: null, name: 'Muhammad Ali', role: 'Base Editor' },
       { id: null, name: 'Paras Bhatia', role: 'Base Editor' },
       { id: null, name: 'Ayyaz Mallah', role: 'Base Editor' },

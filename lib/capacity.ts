@@ -16,12 +16,16 @@ const OPEN_MAX_AGE_DAYS = 45; // assigned within this many days and not finished
 export type DoneTask = { name: string; url: string; day: string };
 export type Pace = 'met' | 'on' | 'behind' | 'none';
 export type CapacityMember = {
-  key: string; name: string; role: string; inClickUp: boolean;
+  key: string; name: string; role: string;
+  /** counted here: in Resilia's ClickUp and on a team whose edits happen there */
+  inClickUp: boolean;
   days: number[]; done: number; target: number; expected: number; remaining: number; open: number; pace: Pace;
   tasks: DoneTask[];
 };
 export type CapacityTeam = {
   id: string; name: string; group: TeamGroup; kpi: TeamKpi; workDays: number;
+  /** false: this team edits in another ClickUp workspace (Agency), so nothing is measured */
+  measured: boolean;
   members: CapacityMember[]; done: number; target: number; expected: number; remaining: number; open: number;
   tracked: number; behind: number; history: { week: string; done: number; target: number }[];
 };
@@ -82,7 +86,9 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
     const workDays = Math.min(7, Math.round(team.kpi.perWeek / team.kpi.perDay));
     const elapsedWork = Math.max(0, Math.min(workDays, elapsedIdx + 1));
     const expectedFull = Math.min(team.kpi.perWeek, team.kpi.perDay * elapsedWork);
-    const members: CapacityMember[] = team.members.map(m => {
+    const measured = team.capacity !== false;
+    const members: CapacityMember[] = team.members.map(mm => {
+      const m = measured ? mm : { ...mm, id: null }; // agency teams: list people, measure nothing
       const all = m.id ? byUser.get(m.id) ?? [] : [];
       const mine = all.filter(t => t.day >= week && t.day <= weekEnd).sort((a, b) => b.day.localeCompare(a.day));
       const counts = days.map(d => mine.filter(t => t.day === d).length);
@@ -91,7 +97,7 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
       const expected = m.id ? expectedFull : 0;
       const pace: Pace = !m.id ? 'none' : done >= target ? 'met' : done >= expected - team.kpi.perDay ? 'on' : 'behind';
       return {
-        key: memberKey(m), name: m.name, role: m.role, inClickUp: m.id != null, days: counts, done, target, expected,
+        key: memberKey(mm), name: m.name, role: m.role, inClickUp: m.id != null, days: counts, done, target, expected,
         remaining: Math.max(0, target - done), open: m.id ? open.get(m.id) ?? 0 : 0, pace, tasks: mine,
       };
     });
@@ -99,14 +105,14 @@ export async function buildCapacity(weekParam: string | null): Promise<CapacityP
     const history = Array.from({ length: HISTORY_WEEKS }, (_, i) => addDays(histFrom, 7 * i)).map(w => ({
       week: w,
       done: tracked.reduce((s, x) => {
-        const id = team.members.find(m => memberKey(m) === x.key)?.id;
+        const id = measured ? team.members.find(m => memberKey(m) === x.key)?.id : null;
         return s + (id ? (byUser.get(id) ?? []).filter(t => t.day >= w && t.day <= addDays(w, 6)).length : 0);
       }, 0),
       target: tracked.length * team.kpi.perWeek,
     }));
     const sum = (f: (x: CapacityMember) => number) => tracked.reduce((s, x) => s + f(x), 0);
     return {
-      id: team.id, name: team.name, group: team.group, kpi: team.kpi, workDays, members,
+      id: team.id, name: team.name, group: team.group, kpi: team.kpi, workDays, measured, members,
       done: sum(x => x.done), target: sum(x => x.target), expected: sum(x => x.expected), remaining: sum(x => x.remaining),
       open: sum(x => x.open), tracked: tracked.length, behind: tracked.filter(x => x.pace === 'behind').length, history,
     };
