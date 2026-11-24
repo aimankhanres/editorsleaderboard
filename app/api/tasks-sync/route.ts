@@ -33,6 +33,16 @@ export async function GET(req: Request) {
               mode() WITHIN GROUP (ORDER BY list_name) AS top_list
          FROM cu_tasks, jsonb_array_elements(editors) e GROUP BY 1 ORDER BY tasks DESC`));
   }
+  // ?diag=editor&id=<clickup user id> : that editor's tasks touched in the last 14 days, with their dates (read-only)
+  if (url.searchParams.get('diag') === 'editor') {
+    await store.ensureTaskTables();
+    return NextResponse.json(await q(
+      `SELECT name, list_name, status, status_type, to_char(edit_done, 'MM-DD HH24:MI') edit_done,
+              to_char(delivered, 'MM-DD HH24:MI') delivered, to_char(assigned, 'MM-DD') assigned,
+              to_char(updated_at, 'MM-DD HH24:MI') updated, to_char(closed_at, 'MM-DD') closed
+         FROM cu_tasks WHERE $1::bigint = ANY(editor_ids) AND updated_at > now() - interval '14 days'
+        ORDER BY updated_at DESC LIMIT 60`, [Number(url.searchParams.get('id'))]));
+  }
   if (url.searchParams.get('diag')) {
     const p = await editorTasksPage(Number(url.searchParams.get('since') ?? 0), Number(url.searchParams.get('page') ?? 0));
     return NextResponse.json({ n: p.tasks.length, lastPage: p.lastPage, sample: p.tasks.slice(0, 3) });
