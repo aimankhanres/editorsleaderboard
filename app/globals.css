@@ -251,6 +251,11 @@ tr:last-child td { border-bottom: 0; }
 .drawer-links a.on strong { color: var(--accent); }
 .drawer-links span { color: var(--muted); font-size: 13px; }
 
+/* Wide screens: the menu is a sidebar, open by default */
+.drawer.pinned { box-shadow: none; transition: none; }
+body.nav-pinned { padding-left: 290px; }
+@media (min-width: 1180px) { .drawer-scrim { display: none; } }
+
 /* Team groups on the attribution page */
 .groups { margin: 22px 0 -12px; }
 .idle-list li.not-cu .name { color: var(--faint); }
