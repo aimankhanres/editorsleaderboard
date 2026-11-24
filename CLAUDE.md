@@ -41,7 +41,7 @@ Details:
 
 ## Teams (what the dashboard shows)
 
-- Boards: **Resizing**, **Iterations** and **Rips** (Production group), plus the Internal, Variations and Agency teams from the org chart. Rips (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
+- Boards: **Resizing**, **Iterations** and **Rips** (Resizing group), **Iterations** (own group), plus the Internal, Variations and Agency teams from the org chart. Rips (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
   credited with all their ClickUp work for now, a rip-only task filter is still to be defined since nothing in
   ClickUp marks rips yet), defined in
   `lib/teams.ts` by ClickUp user id. Only listed
@@ -58,7 +58,8 @@ Details:
   workflow; incremental by date_updated, oldest first, resumable; state in `kv.tasks_sync`). A task is done on its
   "Edit Complete Date" (fallback "Asset Delivered Date"), bucketed in `CAPACITY_TIMEZONE` (default Asia/Karachi).
   Two editors on a task: counts for both. "Open" = Editor Assigned Date in the last 45 days, not finished.
-- Teams: all editing teams from the Nov 2026 org chart, grouped Production / Internal / Variations / Agency. Agency
+- Teams: all editing teams from the Nov 2026 org chart, grouped Resizing (Resizing + Rips) / Iterations / Internal / Variations / Agency. Capacity has one tab per team
+  (Resizing + Rips share the Resizing tab). Agency
   editors are mostly not in Resilia's ClickUp (`id: null`): listed, but nothing can be counted or credited.
 - The attribution page shows the same teams, with a group switcher above the team tabs.
 

@@ -271,7 +271,9 @@ body.nav-pinned { padding-left: 290px; }
 .wk-today { color: var(--accent); font-weight: 650; font-size: 14px; padding: 6px 10px; border-radius: 8px; }
 .wk-today:hover { background: var(--accent-soft); }
 .stat.accent .stat-value { color: var(--accent); }
-.cap-controls { justify-content: space-between; align-items: flex-end; margin-top: 20px; }
+.cap-controls { justify-content: space-between; align-items: flex-end; margin-top: 20px; flex-wrap: nowrap; }
+.cap-controls .control { flex: 1; min-width: 0; }
+.cap-tabs { max-width: 100%; }
 .cap-team { margin-bottom: 14px; overflow: hidden; }
 .cap-head { width: 100%; display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 1.6fr) 18px; gap: 18px; align-items: center; padding: 16px 18px; text-align: left; }
 .cap-head:hover { background: #fafbfe; }

@@ -10,7 +10,7 @@
  */
 export type TeamMember = { id: number | null; name: string; role: string };
 export type TeamKpi = { perDay: number; perWeek: number };
-export type TeamGroup = 'Production' | 'Internal' | 'Variations' | 'Agency';
+export type TeamGroup = 'Resizing' | 'Iterations' | 'Internal' | 'Variations' | 'Agency';
 export type Team = {
   id: string; name: string; group: TeamGroup; kpi: TeamKpi; nameCheck?: boolean;
   /** false: edits happen in another ClickUp workspace, so capacity can't be measured here (Agency teams) */
@@ -28,7 +28,7 @@ export const memberKey = (m: TeamMember) => (m.id ? `u:${m.id}` : `n:${m.name.tr
 
 export const TEAMS: Team[] = [
   {
-    id: 'resizing', name: 'Resizing', group: 'Production', kpi: KPI_RESIZING, nameCheck: true,
+    id: 'resizing', name: 'Resizing', group: 'Resizing', kpi: KPI_RESIZING, nameCheck: true,
     members: [
       { id: 106853412, name: 'Michael Roque', role: 'Editing Lead – Resizing' },
       { id: 100998805, name: 'Usama Mir', role: RESIZE },
@@ -61,7 +61,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'iterations', name: 'Iterations', group: 'Production', kpi: KPI_STANDARD, nameCheck: true,
+    id: 'iterations', name: 'Iterations', group: 'Iterations', kpi: KPI_STANDARD, nameCheck: true,
     members: [
       { id: 106853401, name: 'Damia Tasleem', role: GOOGLE },
       { id: 106838067, name: 'Ginika Mary', role: GOOGLE },
@@ -82,7 +82,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'rips', name: 'Rips', group: 'Production', kpi: KPI_STANDARD,
+    id: 'rips', name: 'Rips', group: 'Resizing', kpi: KPI_STANDARD,
     // Rips editors: only on this board (the org chart lists them under Resizing). Credited with all their ClickUp
     // work for now; a rip-only filter is TBD. Capacity: 1 rip a day, 5 a week.
     nameCheck: true,

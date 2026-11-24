@@ -50,12 +50,16 @@ export default function Capacity() {
     const id = setInterval(() => load(week), POLL_MS);
     return () => clearInterval(id);
   }, [week, load]);
+  // A saved tab that no longer exists (tabs were renamed) falls back to All
+  useEffect(() => { if (data && group !== 'All' && !data.teams.some(t => (t.group === 'Resizing' ? 'Resizing' : t.name) === group)) setGroup('All'); }, [data, group]);
   const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capGroup', g); } catch { /* ignore */ } };
 
-  const groups = data ? ['All', ...new Set(data.teams.map(t => t.group))] : ['All'];
+  // Tabs: All, Resizing (Resizing + Rips boards), then every other team on its own tab
+  const tabOf = (t: CapacityTeam) => (t.group === 'Resizing' ? 'Resizing' : t.name);
+  const groups = data ? ['All', ...new Set(data.teams.map(tabOf))] : ['All'];
   const q = query.trim().toLowerCase();
   const teams = (data?.teams ?? [])
-    .filter(t => group === 'All' || t.group === group)
+    .filter(t => group === 'All' || tabOf(t) === group)
     .map(t => (q ? { ...t, members: t.members.filter(m => m.name.toLowerCase().includes(q)) } : t))
     .filter(t => !q || t.members.length);
   const stale = data != null && week != null && data.week !== week;
@@ -106,7 +110,7 @@ export default function Capacity() {
           <section className="controls cap-controls">
             <div className="control">
               <span className="control-label">Teams</span>
-              <div className="seg" role="tablist" aria-label="Team group">
+              <div className="seg cap-tabs" role="tablist" aria-label="Team">
                 {groups.map(g => <button key={g} role="tab" aria-selected={group === g} className={group === g ? 'on' : ''} onClick={() => pickGroup(g)}>{g}</button>)}
               </div>
             </div>
