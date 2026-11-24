@@ -57,6 +57,7 @@ export const TEAMS: Team[] = [
       { id: 106917202, name: 'Amna Tanveer', role: RESIZE },
       { id: 106919261, name: 'Arslan Sahabrso', role: RESIZE },
       { id: 106919268, name: 'Rehman Khan', role: RESIZE },
+      { id: 106919233, name: 'Manu Bhardwaj', role: 'Video Editor – Resizing' }, // not on the Nov 2026 org chart; added from ClickUp activity (Garlic Resizing)
     ],
   },
   {
@@ -118,6 +119,8 @@ export const TEAMS: Team[] = [
       { id: 106902216, name: 'Sakshi Bisht', role: 'Base Editor' },
       { id: 101084642, name: 'Muhammad Issa', role: 'Base Editor' }, // "Mhamad Issa" in ClickUp
       { id: 101069837, name: 'John Paulo Cataquiz', role: 'Base Editor' }, // John Paulo Cataquiz in ClickUp: the John with Oregano tasks
+      { id: 312885998, name: 'Mark Imbing', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Oil of Oregano pipeline)
+      { id: 106927448, name: 'Daniel Guridi', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Oil of Oregano pipeline)
     ],
   },
   {
@@ -173,6 +176,13 @@ export const TEAMS: Team[] = [
       { id: 106888687, name: 'Ronald Rivera', role: 'Base Editor' },
       { id: 106887749, name: 'Kimberly Navales', role: 'Base Editor' },
       { id: 106899213, name: 'Wilson Sularte', role: 'Base Editor' },
+      { id: 106927452, name: 'Ricthcee Erabon', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106927449, name: 'Ryan Biore', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106927450, name: 'Audrean Verr', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106927451, name: 'Glen Fortun', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106928818, name: 'Grace Vivora', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106928815, name: 'Millaine Reyes', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
+      { id: 106928816, name: 'John Ayagan', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Cinnamon List)
     ],
   },
   {
@@ -185,6 +195,7 @@ export const TEAMS: Team[] = [
       { id: 101097537, name: 'Safdar', role: 'Base Editor' }, // "Muhammad Safdar" in ClickUp
       { id: 106839172, name: 'Arslan Shaukat', role: 'Base Editor' }, // "Arslan" on the org chart; works in Oregano Variation
       { id: 106859554, name: 'Ayyaz Bin Mumtaz', role: 'Base Editor' }, // "Ayyaz" on the org chart; works in Oregano Variation
+      { id: 106916467, name: 'Angelo Ocampo', role: 'Base Editor' }, // not on the Nov 2026 org chart; added from ClickUp activity (Oregano Variation)
     ],
   },
   {
