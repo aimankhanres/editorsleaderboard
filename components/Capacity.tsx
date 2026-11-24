@@ -168,8 +168,8 @@ export default function Capacity() {
             <Stat label="Edits done" value={`${c.done}`} sub={`of ${c.target} capacity · ${pct(c.done, c.target)}%`} />
             <Stat label={data.current ? 'Expected by today' : isRange ? 'Capacity' : 'Weekly capacity'} value={`${data.current ? c.expected : c.target}`}
               sub={data.current ? `${c.done >= c.expected ? '+' : ''}${c.done - c.expected} vs pace` : `${c.editors} editors tracked`} />
-            <Stat label="Spare capacity" value={`${c.remaining}`} sub={data.current ? `edits still open ${period}` : 'edits short of KPI'} accent />
-            <Stat label="Behind pace" value={`${c.behind}`} sub={`of ${c.editors} editors · ${c.open} tasks open`} warn={c.behind > 0} />
+            <Stat label="Spare capacity" value={`${c.remaining}`} sub={data.current ? `edits left to reach KPI ${period}` : 'edits short of KPI'} accent />
+            <Stat label="Behind pace" value={`${c.behind}`} sub={`of ${c.editors} editors · ${c.open} tasks in queue`} warn={c.behind > 0} />
           </section>
           <section className="stats stats-3">
             <Stat label="Total editors" value={`${view.total}`} sub={view.total === view.tracked ? 'all counted in ClickUp' : `${view.tracked} counted · ${view.total - view.tracked} agency / not in ClickUp`} />
@@ -181,7 +181,7 @@ export default function Capacity() {
             <div className={`stat ${view.backlog ? 'warn' : ''}`}>
               <div className="stat-label">Backlog</div>
               <div className="stat-value">{view.backlog ? `+${view.backlog}` : '0'}</div>
-              <div className="stat-sub" title={view.backlogged.map(t => `${t.name}: ${t.open} open vs ${t.weekCapacity} a week`).join('\n')}>
+              <div className="stat-sub" title={view.backlogged.map(t => `${t.name}: ${t.open} in queue vs ${t.weekCapacity} a week`).join('\n')}>
                 {view.backlogged.length
                   ? `${view.backlogged.length} of ${view.pipelines} pipeline${view.pipelines === 1 ? '' : 's'}: ${view.backlogged.slice(0, 3).map(t => `${t.name} +${t.backlog}`).join(', ')}${view.backlogged.length > 3 ? '…' : ''}`
                   : `queue fits in a week's capacity`}
@@ -209,8 +209,8 @@ export default function Capacity() {
 
           <p className="cap-foot">
             A task counts on its ClickUp <strong>Edit Complete Date</strong> (or Asset Delivered Date), in {data.timezone.replace('_', ' ')} time.
-            A task with two editors counts for both. Open = assigned in the last 45 days and not finished.
-            Idle = an editor with no open task right now. Backlog = a team&apos;s open tasks above one week of its capacity (editors × weekly KPI).
+            A task with two editors counts for both. In queue = tasks assigned to the editor in the last 45 days and not finished yet.
+            Idle = an editor with nothing in queue right now. Backlog = a team&apos;s queue above one week of its capacity (editors × weekly KPI).
             Editors on two teams appear on both but count once in the totals above.
           </p>
         </div>
@@ -236,8 +236,8 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
   const fill = Math.min(100, pct(team.done, team.target));
   const mark = Math.min(100, pct(team.expected, team.target));
   const maxHist = Math.max(1, ...team.history.map(h => Math.max(h.done, h.target)));
-  const cols = { gridTemplateColumns: `minmax(210px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(90px, 1fr) 54px 50px 100px` };
-  const minW = 210 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 470;
+  const cols = { gridTemplateColumns: `minmax(210px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(90px, 1fr) 54px 66px 100px` };
+  const minW = 210 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 486;
   const members = [...team.members].sort((a, b) => Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
 
   return (
@@ -247,7 +247,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
           <h2>{team.name}</h2>
           <span className="kpi-chip">{team.kpi.perDay}/day · {team.kpi.perWeek}/week</span>
           {team.tracked > 0 && team.behind > 0 && <span className="behind-chip">{team.behind} behind</span>}
-          {team.backlog > 0 && <span className="behind-chip" title={`${team.open} open tasks vs ${team.weekCapacity} a week of capacity`}>Backlog +{team.backlog}</span>}
+          {team.backlog > 0 && <span className="behind-chip" title={`${team.open} tasks in queue vs ${team.weekCapacity} a week of capacity`}>Backlog +{team.backlog}</span>}
           {team.tracked > 0 && team.idle > 0 && <span className="idle-tag" title="Editors with nothing in their queue right now">{team.idle} idle</span>}
         </div>
         {team.tracked > 0 ? (
@@ -286,7 +286,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
               <span role="columnheader" className="r">Done</span>
               <span role="columnheader">Progress</span>
               <span role="columnheader" className="r">Spare</span>
-              <span role="columnheader" className="r">Open</span>
+              <span role="columnheader" className="r" title="Tasks assigned to this editor (last 45 days) that aren't finished yet">In queue</span>
               <span role="columnheader">Status</span>
             </div>
             {members.map(m => <MemberRow key={m.key} m={m} team={team} data={data} cols={cols} />)}
