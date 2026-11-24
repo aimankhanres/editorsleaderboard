@@ -54,3 +54,28 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   pending     integer,
   error       text
 );
+
+-- Mirror of ClickUp tasks that have an Editor (capacity + matching "#103_W2" ad names). Filled by /api/tasks-sync.
+CREATE TABLE IF NOT EXISTS cu_tasks (
+  task_id     text PRIMARY KEY,
+  name        text NOT NULL,
+  url         text,
+  list_id     text,
+  list_name   text,
+  status      text,
+  status_type text,
+  editors     jsonb NOT NULL DEFAULT '[]',   -- [{id, name}]
+  editor_ids  bigint[] NOT NULL DEFAULT '{}',
+  brief_id    text,
+  edit_done   timestamptz,                   -- "Edit Complete Date"
+  delivered   timestamptz,                   -- "Asset Delivered Date"
+  assigned    timestamptz,                   -- "Editor Assigned Date"
+  created_at  timestamptz,
+  updated_at  timestamptz,
+  closed_at   timestamptz
+);
+CREATE INDEX IF NOT EXISTS cu_tasks_editor_idx ON cu_tasks USING gin (editor_ids);
+CREATE INDEX IF NOT EXISTS cu_tasks_done_idx ON cu_tasks (edit_done);
+CREATE INDEX IF NOT EXISTS cu_tasks_hash_idx ON cu_tasks ((substring(name from '^#([0-9]+)')));
+
+CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());

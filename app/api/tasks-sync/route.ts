@@ -1,22 +1,53 @@
 import { NextResponse } from 'next/server';
+import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { editorTasksPage } from '@/lib/clickup';
+import { editorTasksPage, RateLimited } from '@/lib/clickup';
+import * as store from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 export const maxDuration = 300;
+const BUDGET_MS = 240_000;
 
+/** Paging state kept in kv: pages of "updated after `since`" tasks, oldest first. */
+type State = { since: number; page: number; maxSeen: number };
+
+/**
+ * Keeps cu_tasks (every ClickUp task with an Editor) in sync, incrementally: each run pages through tasks updated
+ * since the last pass, oldest update first, and saves its place after every page, so a long first backfill simply
+ * continues on the next run. Read-only towards ClickUp. Called by the GitHub workflow after /api/sync.
+ */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+  const started = Date.now();
   const url = new URL(req.url);
-  // ?diag=1&reverse=true|false : one page, read-only, to check filter and order
+
   if (url.searchParams.get('diag')) {
-    const p = await editorTasksPage(Number(url.searchParams.get('since') ?? 0), Number(url.searchParams.get('page') ?? 0), { reverse: url.searchParams.get('reverse') !== 'false' });
-    return NextResponse.json({
-      n: p.tasks.length, lastPage: p.lastPage,
-      updated: p.tasks.map(t => t.updated).slice(0, 5).concat(p.tasks.map(t => t.updated).slice(-3)),
-      withEditDone: p.tasks.filter(t => t.editDone).length, withEditors: p.tasks.filter(t => t.editors.length).length,
-      sample: p.tasks.slice(0, 3),
-    });
+    const p = await editorTasksPage(Number(url.searchParams.get('since') ?? 0), Number(url.searchParams.get('page') ?? 0));
+    return NextResponse.json({ n: p.tasks.length, lastPage: p.lastPage, sample: p.tasks.slice(0, 3) });
   }
-  return NextResponse.json({ error: 'not implemented yet' }, { status: 400 });
+
+  await store.ensureTaskTables();
+  let state = (await store.kvGet<State>('tasks_sync')) ?? { since: 0, page: 0, maxSeen: 0 };
+  let pages = 0, saved = 0, passes = 0, rateLimited = false;
+  try {
+    while (Date.now() - started < BUDGET_MS) {
+      const { tasks, lastPage } = await editorTasksPage(state.since, state.page);
+      const withEditor = tasks.filter(t => t.editors.length);
+      await store.upsertCuTasks(withEditor);
+      saved += withEditor.length; pages++;
+      const maxSeen = Math.max(state.maxSeen, ...tasks.map(t => t.updated ?? 0));
+      // End of this pass: next pass asks for anything updated after the newest update we saw (minus 1s slack)
+      state = lastPage ? { since: Math.max(state.since, maxSeen - 1000), page: 0, maxSeen } : { ...state, page: state.page + 1, maxSeen };
+      await store.kvSet('tasks_sync', state);
+      if (lastPage) { passes++; break; }
+    }
+  } catch (e) {
+    if (e instanceof RateLimited) rateLimited = true;
+    else return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e), pages, saved }, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true, pages, saved, caughtUp: passes > 0, rateLimited, state, ...(await store.cuTaskStats()), ms: Date.now() - started,
+  });
 }

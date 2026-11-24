@@ -312,3 +312,65 @@ export async function reextractBriefIds(): Promise<number> {
   }
   return changed.length;
 }
+
+// ---------------------------------------------------------------- ClickUp task mirror
+
+let tasksSchemaReady = false;
+/** Task-mirror tables (kept identical to db/schema.sql), created on first use so no manual migration is needed. */
+const TASK_DDL = [
+  `CREATE TABLE IF NOT EXISTS cu_tasks ( task_id text PRIMARY KEY, name text NOT NULL, url text, list_id text, list_name text, status text, status_type text, editors jsonb NOT NULL DEFAULT '[]', editor_ids bigint[] NOT NULL DEFAULT '{}', brief_id text, edit_done timestamptz, delivered timestamptz, assigned timestamptz, created_at timestamptz, updated_at timestamptz, closed_at timestamptz )`,
+  `CREATE INDEX IF NOT EXISTS cu_tasks_editor_idx ON cu_tasks USING gin (editor_ids)`,
+  `CREATE INDEX IF NOT EXISTS cu_tasks_done_idx ON cu_tasks (edit_done)`,
+  `CREATE INDEX IF NOT EXISTS cu_tasks_hash_idx ON cu_tasks ((substring(name from '^#([0-9]+)')))`,
+  `CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`,
+];
+export async function ensureTaskTables(): Promise<void> {
+  if (tasksSchemaReady) return;
+  for (const stmt of TASK_DDL) await q(stmt);
+  tasksSchemaReady = true;
+}
+
+export async function kvGet<T>(key: string): Promise<T | null> {
+  const rows = await q<{ value: T }>(`SELECT value FROM kv WHERE key = $1`, [key]);
+  return rows[0]?.value ?? null;
+}
+export async function kvSet(key: string, value: unknown): Promise<void> {
+  await q(`INSERT INTO kv (key, value, updated_at) VALUES ($1, $2::jsonb, now())
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [key, JSON.stringify(value)]);
+}
+
+type MirrorRow = import('./clickup').MirroredTask;
+const ts = (n: number | null) => (n ? new Date(n).toISOString() : null);
+
+export async function upsertCuTasks(tasks: MirrorRow[]): Promise<void> {
+  for (const part of chunks(tasks)) {
+    const payload = part.map(t => ({
+      task_id: t.taskId, name: t.name, url: t.url, list_id: t.listId, list_name: t.listName, status: t.status,
+      status_type: t.statusType, editors: t.editors, editor_ids: t.editors.map(e => e.id), brief_id: t.briefId,
+      edit_done: ts(t.editDone), delivered: ts(t.delivered), assigned: ts(t.assigned),
+      created_at: ts(t.created), updated_at: ts(t.updated), closed_at: ts(t.closed),
+    }));
+    await q(
+      `INSERT INTO cu_tasks (task_id, name, url, list_id, list_name, status, status_type, editors, editor_ids, brief_id,
+                             edit_done, delivered, assigned, created_at, updated_at, closed_at)
+       SELECT task_id, name, url, list_id, list_name, status, status_type, editors,
+              ARRAY(SELECT jsonb_array_elements_text(editor_ids)::bigint), brief_id,
+              edit_done, delivered, assigned, created_at, updated_at, closed_at
+         FROM jsonb_to_recordset($1::jsonb) AS x(task_id text, name text, url text, list_id text, list_name text,
+              status text, status_type text, editors jsonb, editor_ids jsonb, brief_id text, edit_done timestamptz,
+              delivered timestamptz, assigned timestamptz, created_at timestamptz, updated_at timestamptz, closed_at timestamptz)
+       ON CONFLICT (task_id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, list_id = EXCLUDED.list_id,
+         list_name = EXCLUDED.list_name, status = EXCLUDED.status, status_type = EXCLUDED.status_type,
+         editors = EXCLUDED.editors, editor_ids = EXCLUDED.editor_ids, brief_id = EXCLUDED.brief_id,
+         edit_done = EXCLUDED.edit_done, delivered = EXCLUDED.delivered, assigned = EXCLUDED.assigned,
+         created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at`,
+      [JSON.stringify(payload)],
+    );
+  }
+}
+
+export async function cuTaskStats(): Promise<{ tasks: number; withEditDone: number; newestUpdate: string | null }> {
+  const r = await q<{ n: string; d: string; u: string | null }>(
+    `SELECT COUNT(*) n, COUNT(edit_done) d, to_char(MAX(updated_at), 'YYYY-MM-DD"T"HH24:MI') u FROM cu_tasks`);
+  return { tasks: Number(r[0].n), withEditDone: Number(r[0].d), newestUpdate: r[0].u };
+}
