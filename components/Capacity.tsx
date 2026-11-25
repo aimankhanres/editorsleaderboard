@@ -334,7 +334,7 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
           const cls = !m.inClickUp || future ? 'blank' : m.tier === 'lead' ? (n > 0 ? 'hit' : 'blank') : n >= dayKpi ? 'hit' : n > 0 ? 'part' : off ? 'blank' : 'miss';
           return <span key={d} role="cell" className={`c-day cell ${cls} ${off ? 'off' : ''} ${d === data.today ? 'today' : ''}`}>{!m.inClickUp || future ? '' : n}</span>;
         })}
-        <span role="cell" className="r c-done">{m.inClickUp ? <><b>{m.done}</b><small>/{m.target}</small></> : '—'}</span>
+        <span role="cell" className="r c-done">{m.inClickUp ? <><b>{m.done}</b>{m.tier !== 'lead' && <small>/{m.target}</small>}</> : '—'}</span>
         <span role="cell" className="c-prog">{m.inClickUp && <span className="bar"><span style={{ width: `${fill}%` }} /></span>}</span>
         <span role="cell" className="r">{m.inClickUp ? m.remaining : '—'}</span>
         <span role="cell" className="r">{m.inClickUp ? m.open : '—'}</span>

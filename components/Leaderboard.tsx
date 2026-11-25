@@ -346,8 +346,8 @@ function Rows({ editors, top, moves, threshold, team }: { editors: EditorRow[]; 
         <span className="c-rank">#</span>
         <span className="c-editor">Editor</span>
         <span className="c-win" title={`Ads with ${threshold}+ spend`}>Winners</span>
-        <span className="c-num">Briefs</span>
-        <span className="c-num">Ads</span>
+        <span className="c-num c-opt">Briefs</span>
+        <span className="c-num c-opt">Ads</span>
         <span className="c-num" title="Videos finished in the period (ClickUp Edit Complete / Asset Delivered date)">Videos</span>
         <span className="c-num" title="Statics finished in the period (ClickUp Size: Static 4x5)">Statics</span>
         <span className="c-num" title="Minutes of finished video, from Frame.io (not connected yet)">Min</span>
@@ -366,8 +366,8 @@ function Rows({ editors, top, moves, threshold, team }: { editors: EditorRow[]; 
                 <span className="who"><span className="name">{e.name}</span><RoleLine e={e} team={team} /></span>
               </span>
               <span className="c-win"><WinnerBadge n={e.winners.length} threshold={threshold} /></span>
-              <span className="c-num">{e.briefs.length}</span>
-              <span className="c-num">{e.ads}</span>
+              <span className="c-num c-opt">{e.briefs.length}</span>
+              <span className="c-num c-opt">{e.ads}</span>
               <span className="c-num">{e.videos ?? '—'}</span>
               <span className="c-num">{e.statics ?? '—'}</span>
               <span className="c-num muted-num" title="Frame.io not connected yet">—</span>

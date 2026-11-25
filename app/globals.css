@@ -381,6 +381,13 @@ tr:last-child td { border-bottom: 0; }
 @media (max-width: 1100px) { .stats-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .stats-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .team-grid { grid-template-columns: 1fr; } }
 
+/* Ranking table on mid-size screens: drop Briefs / Ads (still in the expanded row), scroll as a last resort */
+.table { overflow-x: auto; }
+@media (min-width: 901px) and (max-width: 1320px) {
+  .thead, .row-main { grid-template-columns: 52px minmax(180px, 2fr) 76px 50px 50px 36px 92px minmax(90px, 1fr) 14px; gap: 10px; padding: 0 14px; }
+  .thead .c-opt, .row-main .c-opt { display: none; }
+}
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }
