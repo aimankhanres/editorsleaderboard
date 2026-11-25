@@ -293,3 +293,96 @@ export const TEAMS: Team[] = [
     ],
   },
 ];
+
+// ------------------------------------------------------------------ hierarchy + KPI rules
+
+export type Tier = 'lead' | 'senior' | 'editor';
+/** From the org-chart role: "Lead Editor", "Editing Lead – Resizing" → lead; "Senior Editor", "Sr. Editor" → senior */
+export function tierOf(role: string): Tier {
+  if (/\blead\b/i.test(role)) return 'lead';
+  if (/\b(senior|sr\.?)\b/i.test(role)) return 'senior';
+  return 'editor';
+}
+export const TIER_ORDER: Record<Tier, number> = { lead: 0, senior: 1, editor: 2 };
+
+/**
+ * Edits a member is expected to finish on one day (YYYY-MM-DD), by tier and date (Farwa / Aiman, Nov 2026):
+ * - Leads: 0 (they manage the team; their own edits still count in totals and on the leaderboard).
+ * - October 2026: every team except the Resizing group 3 a week (0.6 a workday).
+ * - Otherwise the team KPI (Resizing 2/day, others 1/day). Seniors: 1–2 a day; until told otherwise the same as
+ *   their team's editors (SENIOR_PER_DAY overrides, e.g. 2).
+ */
+const SENIOR_PER_DAY = Number(process.env.SENIOR_PER_DAY) || null;
+export function perDayFor(team: Team, role: string, day: string): number {
+  const tier = tierOf(role);
+  if (tier === 'lead') return 0;
+  if (day.startsWith('2026-10') && team.group !== 'Resizing') return 3 / 5;
+  if (tier === 'senior' && SENIOR_PER_DAY) return SENIOR_PER_DAY;
+  return team.kpi.perDay;
+}
+
+/** The KPI table shown in the UI (KPI rules panel) */
+export const KPI_RULES = [
+  { period: 'From Nov 1, 2026', rows: [
+    { who: 'Editor · Resizing', kpi: '2 a day · 14 a week' },
+    { who: 'Editor · every other team', kpi: '1 a day · 5 a week' },
+    { who: 'Senior', kpi: SENIOR_PER_DAY ? `${SENIOR_PER_DAY} a day` : '1–2 a day (team KPI)' },
+    { who: 'Lead', kpi: '0 (manages the team)' },
+  ] },
+  { period: 'October 2026', rows: [
+    { who: 'Resizing', kpi: '2 a day · 14 a week' },
+    { who: 'Every other team', kpi: '3 a week' },
+  ] },
+];
+
+// ------------------------------------------------------------------ boards: which team a ClickUp task belongs to
+
+/** Resilia ClickUp list -> team id (live pipelines and their archives). Lists not here have no board. */
+const LIST_BOARD: Record<string, string> = {
+  '901614785376': 'oregano-internal', '901611135664': 'oregano-internal', '901614224080': 'oregano-internal',
+  '901615209472': 'oregano-internal', '1300340000012950': 'oregano-internal',
+  '901614380046': 'garlic-internal', '901615213899': 'garlic-internal', '1300340000012951': 'garlic-internal',
+  '901616741550': 'cin-internal', '1300340000012952': 'cin-internal',
+  '1300340000000866': 'oregano-variations', '1300340000001523': 'garlic-variations', '1300340000009738': 'cin-variations',
+  '901615541251': 'iterations',
+  '1300340000008474': 'resizing', '1300340000008475': 'resizing', '1300340000008385': 'resizing',
+  '1300340000009707': 'resizing', '1300340000009691': 'resizing', '1300340000009709': 'resizing',
+};
+
+/** Product (SKU) text -> oregano | garlic | cin */
+export function productKey(product: string | null | undefined, fallback = ''): 'oregano' | 'garlic' | 'cin' | null {
+  const s = `${product ?? ''} ${fallback}`.toLowerCase();
+  if (/oregano|blackseed|\boo\b/.test(s)) return 'oregano';
+  if (/garlic|\baog\b/.test(s)) return 'garlic';
+  if (/cinnamon|\bcin\b/.test(s)) return 'cin';
+  return null;
+}
+
+export type TaskPlace = { listId: string | null; workspace?: string | null; product?: string | null; name?: string | null };
+/** The team board a task belongs to: its list in Resilia's ClickUp, or "<product>-agency" for agency tasks */
+export function boardOf(t: TaskPlace): string | null {
+  if (t.workspace === 'agency') {
+    const p = productKey(t.product, t.name?.match(/^(OO|AOG|CIN)-/i)?.[1] ?? '');
+    return p ? `${p}-agency` : null;
+  }
+  return t.listId ? LIST_BOARD[t.listId] ?? null : null;
+}
+
+/** Teams each member key is on, in TEAMS order (the first is their home team) */
+export const TEAMS_OF: Map<string, string[]> = (() => {
+  const m = new Map<string, string[]>();
+  for (const t of TEAMS) for (const mm of t.members) m.set(memberKey(mm), [...(m.get(memberKey(mm)) ?? []), t.id]);
+  return m;
+})();
+
+/**
+ * Does a task on `board` count for this member on team `teamId`? People on one team: always. People on several
+ * teams: on the team whose board the task came from; tasks from no board (or a board they're not on) count on their
+ * home team (the first one).
+ */
+export function countsOnTeam(key: string, teamId: string, board: string | null): boolean {
+  const teams = TEAMS_OF.get(key) ?? [teamId];
+  if (teams.length <= 1) return true;
+  if (board && teams.includes(board)) return board === teamId;
+  return teams[0] === teamId;
+}

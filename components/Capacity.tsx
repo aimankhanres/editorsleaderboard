@@ -1,9 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { CapacityMember, CapacityPayload, CapacityTeam, Pace } from '@/lib/capacity';
 import { ago, initials } from '@/lib/format';
-import Nav from './Nav';
 
 const POLL_MS = 5 * 60_000;
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -12,7 +11,11 @@ const PACE: Record<Pace, { label: string; cls: string }> = {
   on: { label: 'On pace', cls: 'on' },
   behind: { label: 'Behind', cls: 'behind' },
   none: { label: 'Not tracked', cls: 'none' },
+  lead: { label: 'Lead · manages', cls: 'lead' },
 };
+const TIER_LABEL = { lead: 'Lead', senior: 'Senior', editor: 'Editor' } as const;
+const TIER_ORDER = { lead: 0, senior: 1, editor: 2 } as const;
+const GROUP_TABS = ['All', 'Resizing', 'Iterations', 'Internal', 'Variations', 'Agency'];
 
 const fmtDay = (ymd: string, opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) =>
   new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
@@ -63,8 +66,9 @@ export default function Capacity() {
   const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capGroup', g); } catch { /* ignore */ } };
 
   // Tabs: All, Resizing (Resizing + Rips boards), then every other team on its own tab
-  const tabOf = (t: CapacityTeam) => (t.group === 'Resizing' ? 'Resizing' : t.name);
-  const groups = data ? ['All', ...new Set(data.teams.map(tabOf))] : ['All'];
+  // Tabs: the team groups (Resizing = Resizing + Rips boards)
+  const tabOf = (t: CapacityTeam) => t.group;
+  const groups = data ? GROUP_TABS.filter(g => g === 'All' || data.teams.some(t => t.group === g)) : ['All'];
   const q = query.trim().toLowerCase();
   const teams = (data?.teams ?? [])
     .filter(t => group === 'All' || tabOf(t) === group)
@@ -106,7 +110,7 @@ export default function Capacity() {
     }
     const all = [...everyone.values()];
     const tracked = all.filter(m => m.inClickUp);
-    const idle = tracked.filter(m => m.open === 0).sort((a, b) => a.name.localeCompare(b.name));
+    const idle = tracked.filter(m => m.open === 0 && m.tier !== 'lead').sort((a, b) => a.name.localeCompare(b.name));
     const backlogged = inView.filter(t => t.backlog > 0).sort((a, b) => b.backlog - a.backlog);
     return { total: all.length, tracked: tracked.length, idle, backlogged, pipelines: inView.filter(t => t.tracked > 0).length,
       backlog: backlogged.reduce((a, t) => a + t.backlog, 0) };
@@ -116,13 +120,14 @@ export default function Capacity() {
     <main className="wrap">
       <header className="top">
         <div className="title-row">
-          <Nav />
           <div>
-            <h1>Editing Capacity</h1>
-            <p className="sub">Edits finished per editor vs KPI · <strong>Resizing 2 a day (14 a week)</strong> · every other team <strong>1 a day (5 a week)</strong></p>
+            <div className="crumb">Capacity</div>
+            <h1>Editor capacity</h1>
+            <p className="sub">Edits finished per editor vs KPI · <strong>Resizing 2 a day</strong> · every other team <strong>1 a day</strong> · Leads 0</p>
           </div>
         </div>
         <div className="sync">
+          {data && <KpiRules rules={data.kpiRules} />}
           {data?.mirror && (
             <span className={`pill ${data.mirror.caughtUp ? '' : 'demo'}`} title={`${data.mirror.tasks.toLocaleString()} ClickUp tasks with an editor`}>
               <span className={`dot ${data.mirror.caughtUp ? 'ok' : 'err'}`} />
@@ -236,16 +241,17 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
   const fill = Math.min(100, pct(team.done, team.target));
   const mark = Math.min(100, pct(team.expected, team.target));
   const maxHist = Math.max(1, ...team.history.map(h => Math.max(h.done, h.target)));
-  const cols = { gridTemplateColumns: `minmax(210px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(90px, 1fr) 78px 66px 100px` };
-  const minW = 210 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 510;
-  const members = [...team.members].sort((a, b) => Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
+  const cols = { gridTemplateColumns: `minmax(220px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(80px, 1fr) 78px 66px 56px 56px 110px` };
+  const minW = 220 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 600;
+  // Leads first, then Seniors, then Editors; within a tier, people we can count first, most edits first
+  const members = [...team.members].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
 
   return (
     <section className="card cap-team">
       <button className="cap-head" onClick={() => setOpen(o => !o)} aria-expanded={shown}>
         <div className="cap-title">
           <h2>{team.name}</h2>
-          <span className="kpi-chip">{team.kpi.perDay}/day · {team.kpi.perWeek}/week</span>
+          <span className="kpi-chip">{data.week.startsWith('2026-10') && team.group !== 'Resizing' ? '3/week (Oct)' : `${team.kpi.perDay}/day · ${team.kpi.perWeek}/week`}</span>
           {team.tracked > 0 && team.behind > 0 && <span className="behind-chip">{team.behind} behind</span>}
           {team.backlog > 0 && <span className="behind-chip" title={`${team.open} tasks in queue vs ${team.weekCapacity} a week of capacity`}>Backlog +{team.backlog}</span>}
           {team.tracked > 0 && team.idle > 0 && <span className="idle-tag" title="Editors with nothing in their queue right now">{team.idle} idle</span>}
@@ -287,9 +293,16 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
               <span role="columnheader">Progress</span>
               <span role="columnheader" className="r" title="More edits needed to hit the KPI (KPI − done)">Left to KPI</span>
               <span role="columnheader" className="r" title="Tasks assigned to this editor (last 45 days) that aren't finished yet">In queue</span>
+              <span role="columnheader" className="r" title="Videos finished in the period">Videos</span>
+              <span role="columnheader" className="r" title="Statics finished in the period (ClickUp Size: Static 4x5, or format Static)">Statics</span>
               <span role="columnheader">Status</span>
             </div>
-            {members.map(m => <MemberRow key={m.key} m={m} team={team} data={data} cols={cols} />)}
+            {members.map((m, i) => (
+              <Fragment key={m.key}>
+                {(i === 0 || members[i - 1].tier !== m.tier) && <div className={`tier-sep ${m.tier}`}>{TIER_LABEL[m.tier]}s{m.tier === 'lead' ? ' · KPI 0, manage the team' : ''}</div>}
+                <MemberRow m={m} team={team} data={data} cols={cols} />
+              </Fragment>
+            ))}
           </div>
           {untracked > 0 && team.measured && <p className="cap-note">{untracked} editor{untracked === 1 ? '' : 's'} on this team {untracked === 1 ? 'is' : 'are'} not in Resilia&apos;s ClickUp workspace (agency workspace), so their edits can&apos;t be counted here.</p>}
         </div>
@@ -305,20 +318,28 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
     <div className={`cap-member ${m.inClickUp ? '' : 'untracked'} ${open ? 'open' : ''}`} role="rowgroup">
       <button className="cap-row" role="row" style={cols} onClick={() => m.inClickUp && setOpen(o => !o)} aria-expanded={m.inClickUp ? open : undefined} disabled={!m.inClickUp}>
         <span className="c-ed" role="cell">
-          <span className="avatar" style={{ width: 30, height: 30, fontSize: 11.5 }}>{initials(m.name)}</span>
-          <span className="who"><span className="name">{m.name}</span><span className="role">{m.inClickUp ? m.role : team.measured ? 'Not in Resilia ClickUp' : `${m.role} · agency workspace`}</span></span>
+          <span className={`avatar tier-${m.tier}`} style={{ width: 30, height: 30, fontSize: 11.5 }}>{initials(m.name)}</span>
+          <span className="who">
+            <span className="name">{m.name}</span>
+            <span className="role"><span className={`tier-badge ${m.tier}`}>{TIER_LABEL[m.tier]}</span>
+              {m.alsoOn.length > 0 && <span className="board-chip" title={`Also on ${m.alsoOn.join(', ')}. Only edits from this team's ClickUp board count here.`}>+{m.alsoOn.join(', ')}</span>}
+              {!m.inClickUp && <span>{team.measured ? 'Not in Resilia ClickUp' : 'agency workspace'}</span>}</span>
+          </span>
         </span>
         {m.days.map((n, i) => {
           const d = data.days[i];
           const future = d > data.today;
           const off = dowOf(d) >= team.workDays;
-          const cls = !m.inClickUp || future ? 'blank' : n >= team.kpi.perDay ? 'hit' : n > 0 ? 'part' : off ? 'blank' : 'miss';
+          const dayKpi = d.startsWith('2026-10') && team.group !== 'Resizing' ? 1 : team.kpi.perDay;
+          const cls = !m.inClickUp || future ? 'blank' : m.tier === 'lead' ? (n > 0 ? 'hit' : 'blank') : n >= dayKpi ? 'hit' : n > 0 ? 'part' : off ? 'blank' : 'miss';
           return <span key={d} role="cell" className={`c-day cell ${cls} ${off ? 'off' : ''} ${d === data.today ? 'today' : ''}`}>{!m.inClickUp || future ? '' : n}</span>;
         })}
         <span role="cell" className="r c-done">{m.inClickUp ? <><b>{m.done}</b><small>/{m.target}</small></> : '—'}</span>
         <span role="cell" className="c-prog">{m.inClickUp && <span className="bar"><span style={{ width: `${fill}%` }} /></span>}</span>
         <span role="cell" className="r">{m.inClickUp ? m.remaining : '—'}</span>
         <span role="cell" className="r">{m.inClickUp ? m.open : '—'}</span>
+        <span role="cell" className="r">{m.inClickUp ? m.videos : '—'}</span>
+        <span role="cell" className="r">{m.inClickUp ? m.statics : '—'}</span>
         <span role="cell"><span className={`pace ${PACE[m.pace].cls}`}>{PACE[m.pace].label}</span></span>
       </button>
       {open && (
@@ -330,6 +351,28 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
               ))}
             </ul>
           ) : <p className="muted">No finished edits {data.mode === 'range' ? 'in this period' : 'this week'}.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiRules({ rules }: { rules: CapacityPayload['kpiRules'] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="kpi-rules">
+      <button className="btn-ghost" onClick={() => setOpen(o => !o)} aria-expanded={open}>⚙ KPI rules</button>
+      {open && (
+        <div className="card kpi-pop" role="dialog" aria-label="KPI rules">
+          {rules.map(r => (
+            <div key={r.period}>
+              <div className="kpi-eff">{r.period}</div>
+              <table>
+                <tbody>{r.rows.map(x => <tr key={x.who}><td>{x.who}</td><td>{x.kpi}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ))}
+          <p className="muted">Workdays: every day for Resizing, Mon–Fri for other teams. Leads&apos; own edits still count in team totals.</p>
         </div>
       )}
     </div>

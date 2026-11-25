@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import { ago, initials, money, monthLabel } from '@/lib/format';
 import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
-import Nav from './Nav';
 
 const POLL_MS = 60_000;
 
@@ -93,9 +92,9 @@ export default function Leaderboard() {
     <main className="wrap">
       <header className="top">
         <div className="title-row">
-          <Nav />
           <div>
-          <h1>Editor Leaderboard</h1>
+          <div className="crumb">Attribution</div>
+          <h1>Editors</h1>
           <p className="sub">
             Ad spend on ads built from each editor&apos;s briefs · <strong>{label === 'All' ? 'Meta + Google' : label}</strong>
             {label !== 'Meta' ? ' (Google: video campaigns only)' : ''}
@@ -223,7 +222,7 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
               <input className="search" type="search" placeholder="Search editor or role" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
             </div>
           </div>
-          <Rows editors={sorted.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom && sort === 'spend'} threshold={threshold} />
+          <Rows editors={sorted.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom && sort === 'spend'} threshold={threshold} team={team.name} />
           {q && !withSpend.some(match) && <div className="empty small">Nobody with spend matches “{query}”.</div>}
         </section>
       )}
@@ -287,11 +286,25 @@ function WinnerBadge({ n, threshold }: { n: number; threshold: string }) {
   return <span className="winners" title={`${n} ad${n === 1 ? '' : 's'} with ${threshold}+ spend`}><Trophy size={13} />{n}</span>;
 }
 
-function Avatar({ name, src, size = 40 }: { name: string; src: string | null; size?: number }) {
+function Avatar({ name, src, size = 40, tier }: { name: string; src: string | null; size?: number; tier?: EditorRow['tier'] }) {
+  const cls = `avatar ${tier ? `tier-${tier}` : ''}`;
   return src
     // eslint-disable-next-line @next/next/no-img-element
-    ? <img className="avatar" src={src} alt="" width={size} height={size} />
-    : <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.38 }}>{initials(name)}</span>;
+    ? <img className={cls} src={src} alt="" width={size} height={size} />
+    : <span className={cls} style={{ width: size, height: size, fontSize: size * 0.38 }}>{initials(name)}</span>;
+}
+
+const TIER_LABEL = { lead: 'Lead', senior: 'Senior', editor: 'Editor' } as const;
+/** Tier badge + the org-chart role, plus the other teams for people on several boards */
+function RoleLine({ e, team }: { e: EditorRow; team?: string }) {
+  const others = (e.boards ?? []).filter(b => b.name !== team);
+  return (
+    <span className="role">
+      {e.tier && <span className={`tier-badge ${e.tier}`}>{TIER_LABEL[e.tier]}</span>}
+      {others.length > 0 && <span className="board-chip" title="Works on several boards: this row shows only spend from this team's ClickUp board">+{others.map(b => b.name).join(', ')}</span>}
+      {e.inClickUp === false ? 'Not in Resilia ClickUp · agency workspace' : e.role}
+    </span>
+  );
 }
 
 function Move({ e }: { e: EditorRow }) {
@@ -309,9 +322,9 @@ function Podium({ editors, moves }: { editors: EditorRow[]; moves: boolean }) {
       {order.map(e => (
         <div key={e.key} className={`step p${e.rank}`}>
           <div className="medal">{e.rank}</div>
-          <Avatar name={e.name} src={e.avatar} size={e.rank === 1 ? 68 : 56} />
+          <Avatar name={e.name} src={e.avatar} size={e.rank === 1 ? 68 : 56} tier={e.tier} />
           <div className="p-name">{e.name}</div>
-          <div className="p-role">{e.role}</div>
+          <div className="p-role">{e.tier && <span className={`tier-badge ${e.tier}`}>{TIER_LABEL[e.tier]}</span>} {e.role}</div>
           <div className="p-spend">{money(e.spend)}</div>
           <div className="p-meta">
             {e.winners.length > 0 && <span className="winners"><Trophy size={13} />{e.winners.length} winner{e.winners.length === 1 ? '' : 's'}</span>}
@@ -324,7 +337,7 @@ function Podium({ editors, moves }: { editors: EditorRow[]; moves: boolean }) {
   );
 }
 
-function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: number; moves: boolean; threshold: string }) {
+function Rows({ editors, top, moves, threshold, team }: { editors: EditorRow[]; top: number; moves: boolean; threshold: string; team?: string }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!editors.length) return null;
   return (
@@ -335,6 +348,9 @@ function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: n
         <span className="c-win" title={`Ads with ${threshold}+ spend`}>Winners</span>
         <span className="c-num">Briefs</span>
         <span className="c-num">Ads</span>
+        <span className="c-num" title="Videos finished in the period (ClickUp Edit Complete / Asset Delivered date)">Videos</span>
+        <span className="c-num" title="Statics finished in the period (ClickUp Size: Static 4x5)">Statics</span>
+        <span className="c-num" title="Minutes of finished video, from Frame.io (not connected yet)">Min</span>
         <span className="c-spend">Spend</span>
         <span className="c-share">Share of team</span>
         <span />
@@ -346,12 +362,15 @@ function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: n
             <button className="row-main" onClick={() => setOpen(isOpen ? null : e.key)} aria-expanded={isOpen}>
               <span className="c-rank"><b>{moves ? e.rank : i + 1}</b>{moves && <Move e={e} />}</span>
               <span className="c-editor">
-                <Avatar name={e.name} src={e.avatar} size={34} />
-                <span className="who"><span className="name">{e.name}</span><span className="role">{e.role}</span></span>
+                <Avatar name={e.name} src={e.avatar} size={34} tier={e.tier} />
+                <span className="who"><span className="name">{e.name}</span><RoleLine e={e} team={team} /></span>
               </span>
               <span className="c-win"><WinnerBadge n={e.winners.length} threshold={threshold} /></span>
               <span className="c-num">{e.briefs.length}</span>
               <span className="c-num">{e.ads}</span>
+              <span className="c-num">{e.videos ?? '—'}</span>
+              <span className="c-num">{e.statics ?? '—'}</span>
+              <span className="c-num muted-num" title="Frame.io not connected yet">—</span>
               <span className="c-spend">{money(e.spend)}</span>
               <span className="c-share">
                 <span className="bar"><span style={{ width: `${Math.max(2, top ? (e.spend / top) * 100 : 0)}%` }} /></span>
@@ -361,6 +380,23 @@ function Rows({ editors, top, moves, threshold }: { editors: EditorRow[]; top: n
             </button>
             {isOpen && (
               <div className="detail-panel">
+                {e.boards && e.boards.length > 1 && (
+                  <div className="detail-block">
+                    <h4>Spend by board (task origin)</h4>
+                    <div className="board-split">
+                      {e.boards.map(b => {
+                        const all = e.boards!.reduce((a, x) => a + x.spend, 0);
+                        return (
+                          <div key={b.team} className={`bs-item ${b.name === team ? 'cur' : ''}`}>
+                            <div className="bs-h"><span>{b.name}</span><b>{money(b.spend)}</b></div>
+                            <div className="bs-bar"><span style={{ width: `${all ? (b.spend / all) * 100 : 0}%` }} /></div>
+                            <div className="bs-n">{b.ads} ads · {all ? Math.round((b.spend / all) * 100) : 0}% of their spend</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="detail-block">
                   <h4><Trophy size={14} /> Winner ads ({threshold}+)</h4>
                   {e.winners.length ? (

@@ -1,9 +1,10 @@
 import { cfg } from './config';
-import { addDays, todayIn } from './dates';
+import { addDays, nextMonth, todayIn } from './dates';
+const CAPACITY_TZ = process.env.CAPACITY_TIMEZONE ?? 'Asia/Karachi'; // same as lib/capacity
 import type {
   AdAgg, BriefInfo, EditorBrief, EditorRef, EditorRow, LeaderboardPayload, ReviewItem, RosterEntry, TeamBoard, WinnerAd,
 } from './types';
-import { TEAMS, memberKey, type Team } from './teams';
+import { TEAMS, TEAMS_OF, boardOf, countsOnTeam, memberKey, tierOf, type Team } from './teams';
 import { snapPrefix, viewChannels, type ChannelView } from './channels';
 import { isBareNumber, isInternalKey, isOtherWorkspaceBrief } from './briefs';
 
@@ -142,7 +143,8 @@ export function allocate(
     share: attributed ? a.spend / attributed : 0,
     ads: a.ads.size,
     briefs: [...a.briefs.values()]
-      .map((b): EditorBrief => ({ briefId: b.info.briefId, taskName: b.info.taskName, taskUrl: b.info.taskUrl, spend: round2(b.spend), ads: b.ads.size }))
+      .map((b): EditorBrief => ({ briefId: b.info.briefId, taskName: b.info.taskName, taskUrl: b.info.taskUrl, spend: round2(b.spend), ads: b.ads.size,
+        board: boardOf({ listId: b.info.listId ?? null, workspace: b.info.workspace, product: b.info.product, name: b.info.taskName }) }))
       .sort((x, y) => y.spend - x.spend),
     winners: [...a.winners.values()].sort((x, y) => y.spend - x.spend),
   })).sort((x, y) => y.spend - x.spend || x.name.localeCompare(y.name));
@@ -162,15 +164,37 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Ranks and rank changes are within the team: yesterday's rank comes from re-ranking yesterday's
  * snapshot spends among the same members.
  */
-export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string, number>, teams: Team[] = TEAMS): TeamBoard[] {
+export type AssetCount = { key: string; board: string | null; videos: number; statics: number };
+
+export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string, number>, teams: Team[] = TEAMS,
+  assets: AssetCount[] = []): TeamBoard[] {
   const byKey = new Map(editors.map(e => [e.key, e]));
+  const teamName = new Map(TEAMS.map(t => [t.id, t.name]));
+  // A person on several teams: each team board shows only the spend from briefs on that team's ClickUp board
+  // (unplaced briefs count on their home team), and the row lists the split across their teams.
+  const part = (key: string, teamId: string) => {
+    const e = byKey.get(key);
+    if (!e) return { spend: 0, ads: 0, briefs: [], winners: [] };
+    if ((TEAMS_OF.get(key) ?? []).length <= 1) return { spend: e.spend, ads: e.ads, briefs: e.briefs, winners: e.winners };
+    const briefs = e.briefs.filter(b => countsOnTeam(key, teamId, b.board ?? null));
+    const ids = new Set(briefs.map(b => b.briefId));
+    return {
+      spend: round2(briefs.reduce((a, b) => a + b.spend, 0)), ads: briefs.reduce((a, b) => a + b.ads, 0), briefs,
+      winners: e.winners.filter(w => w.briefId.split(', ').some(id => ids.has(id))),
+    };
+  };
+  const assetsOf = (key: string, teamId: string) => assets.filter(a => a.key === key && countsOnTeam(key, teamId, a.board))
+    .reduce((acc, a) => ({ videos: acc.videos + a.videos, statics: acc.statics + a.statics }), { videos: 0, statics: 0 });
   return teams.map(team => {
     const rows = team.members.map(m => {
       const key = memberKey(m);
       const e = byKey.get(key);
+      const p = part(key, team.id);
+      const multi = TEAMS_OF.get(key) ?? [];
       return {
-        key, name: m.name, role: m.role, avatar: e?.avatar ?? null, active: true, inClickUp: m.id != null,
-        spend: e?.spend ?? 0, ads: e?.ads ?? 0, briefs: e?.briefs ?? [], winners: e?.winners ?? [], share: 0,
+        key, name: m.name, role: m.role, tier: tierOf(m.role), avatar: e?.avatar ?? null, active: true, inClickUp: m.id != null,
+        spend: p.spend, ads: p.ads, briefs: p.briefs, winners: p.winners, share: 0, ...assetsOf(key, team.id),
+        boards: multi.length > 1 ? multi.map(t => ({ team: t, name: teamName.get(t) ?? t, ...(({ spend, ads }) => ({ spend, ads }))(part(key, t)) })) : undefined,
       };
     });
     rows.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
@@ -212,7 +236,11 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     range ? new Map<string, number>() : store.previousSpends(month, today, snapPrefix(view)),
     store.dataSpan(),
   ]);
-  const briefMap = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]);
+  const [briefMap, assetRows] = await Promise.all([
+    store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]),
+    range ? store.assetsDone(range.from, addDays(range.to, 1), CAPACITY_TZ) : store.assetsDone(`${month}-01`, `${nextMonth(month)}-01`, CAPACITY_TZ),
+  ]);
+  const assets: AssetCount[] = assetRows.map(r => ({ key: `u:${r.uid}`, board: boardOf({ listId: r.list_id, workspace: r.workspace, product: r.product, name: r.name }), videos: r.videos, statics: r.statics }));
   const alloc = allocate(ads, briefMap, roster);
   return {
     month,
@@ -224,7 +252,7 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     total: alloc.total,
     attributed: alloc.attributed,
     editors: rank(alloc.editors, prev),
-    teams: buildTeams(alloc.editors, prevSpend),
+    teams: buildTeams(alloc.editors, prevSpend, TEAMS, assets),
     review: alloc.review,
     lastSync: last,
     splitMode: cfg.splitMode,

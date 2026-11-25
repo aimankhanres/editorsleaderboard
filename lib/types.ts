@@ -9,6 +9,11 @@ export type BriefInfo = {
   taskUrl: string | null;
   editors: EditorRef[];
   status: BriefStatus;
+  /** From the task mirror (cu_tasks): where the task lives and who the strategist is */
+  listId?: string | null;
+  workspace?: string | null;
+  product?: string | null;
+  strategists?: EditorRef[];
 };
 
 /** One ad's spend for the month, already summed across days */
@@ -16,7 +21,7 @@ export type AdAgg = { adId: string; adName: string; campaign: string; spend: num
 
 export type RosterEntry = { name: string; avatar: string | null; active: boolean };
 
-export type EditorBrief = { briefId: string; taskName: string | null; taskUrl: string | null; spend: number; ads: number };
+export type EditorBrief = { briefId: string; taskName: string | null; taskUrl: string | null; spend: number; ads: number; board?: string | null };
 
 /** An ad credited to an editor whose spend (the whole ad, not the editor's share) is >= the winner threshold */
 export type WinnerAd = { adId: string; adName: string; spend: number; briefId: string; taskUrl: string | null };
@@ -37,6 +42,12 @@ export type EditorRow = {
   role?: string;
   /** false: not in Resilia's ClickUp workspace, so nothing can be credited */
   inClickUp?: boolean;
+  tier?: 'lead' | 'senior' | 'editor';
+  /** Assets finished in the period (ClickUp Edit Complete / Asset Delivered date), videos vs statics */
+  videos?: number;
+  statics?: number;
+  /** People on several teams: their spend per team board (this row shows only this team's part) */
+  boards?: { team: string; name: string; spend: number; ads: number }[];
 };
 
 export type TeamBoard = {

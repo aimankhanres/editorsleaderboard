@@ -187,17 +187,36 @@ export async function markBriefsErrored(briefIds: string[]): Promise<void> {
 export async function loadBriefMap(briefIds: string[]): Promise<Map<string, BriefInfo>> {
   const map = new Map<string, BriefInfo>();
   if (!briefIds.length) return map;
+  await ensureTaskTables();
   const rows = await q<{
     brief_id: string; task_id: string | null; task_name: string | null; task_url: string | null;
-    editors: EditorRef[]; status: BriefStatus;
-  }>(`SELECT brief_id, task_id, task_name, task_url, editors, status FROM brief_map WHERE brief_id = ANY($1::text[])`, [briefIds]);
+    editors: EditorRef[]; status: BriefStatus; list_id: string | null; workspace: string | null; product: string | null;
+    strategists: { id: number; name: string }[] | null;
+  }>(`SELECT b.brief_id, b.task_id, b.task_name, b.task_url, b.editors, b.status, t.list_id, t.workspace, t.product, t.strategists
+        FROM brief_map b LEFT JOIN cu_tasks t ON t.task_id = b.task_id
+       WHERE b.brief_id = ANY($1::text[])`, [briefIds]);
   for (const r of rows) {
     map.set(r.brief_id, {
       briefId: r.brief_id, taskId: r.task_id, taskName: r.task_name, taskUrl: r.task_url,
       editors: Array.isArray(r.editors) ? r.editors : [], status: r.status,
+      listId: r.list_id, workspace: r.workspace, product: r.product,
+      strategists: (r.strategists ?? []).map(u => ({ key: `u:${u.id}`, name: u.name, avatar: null })),
     });
   }
   return map;
+}
+
+/** Assets each editor finished in [from, toExclusive) (in `tz`), by board, videos vs statics */
+export async function assetsDone(from: string, toExclusive: string, tz: string) {
+  await ensureTaskTables();
+  return q<{ uid: string; list_id: string | null; workspace: string | null; product: string | null; name: string; statics: number; videos: number }>(
+    `SELECT u::text AS uid, list_id, workspace, product, min(name) AS name,
+            COUNT(*) FILTER (WHERE st)::int AS statics, COUNT(*) FILTER (WHERE NOT st)::int AS videos
+       FROM (SELECT *, (EXISTS (SELECT 1 FROM unnest(sizes) z WHERE z ILIKE 'static%') OR COALESCE(format, '') ILIKE 'static%') AS st
+               FROM cu_tasks
+              WHERE COALESCE(edit_done, delivered) >= ($1::date)::timestamp AT TIME ZONE $3
+                AND COALESCE(edit_done, delivered) <  ($2::date)::timestamp AT TIME ZONE $3) t, unnest(editor_ids) u
+      GROUP BY 1, 2, 3, 4`, [from, toExclusive, tz]);
 }
 
 /** Webhook: force the next sync to refetch this task. Returns rows touched. */
