@@ -61,6 +61,7 @@ async function accessToken(): Promise<string> {
 
 export async function frameGet<T = unknown>(path: string): Promise<{ status: number; body: T }> {
   const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  if (res.status === 429) throw new Error('FRAME_RATE_LIMIT');
   return { status: res.status, body: (await res.json().catch(() => null)) as T };
 }
 

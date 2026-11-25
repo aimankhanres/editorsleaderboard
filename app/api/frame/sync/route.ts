@@ -25,8 +25,10 @@ export async function GET(req: Request) {
     try {
       await store.saveFrameMedia(url, await durationOf(url));
     } catch (e) {
-      failed++;
       const msg = e instanceof Error ? e.message : String(e);
+      // Rate limited or timed out: leave this link unchecked so the next pass retries it, and stop for now
+      if (msg === 'FRAME_RATE_LIMIT' || /timeout|aborted/i.test(msg)) break;
+      failed++;
       await store.saveFrameMedia(url, { kind: 'error', fileId: null, seconds: null, mediaType: null, name: null, error: msg.slice(0, 300) });
       if (/not connected|token/i.test(msg)) break;
     }
