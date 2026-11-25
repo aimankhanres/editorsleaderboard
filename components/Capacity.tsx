@@ -241,8 +241,9 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
   const fill = Math.min(100, pct(team.done, team.target));
   const mark = Math.min(100, pct(team.expected, team.target));
   const maxHist = Math.max(1, ...team.history.map(h => Math.max(h.done, h.target)));
-  const cols = { gridTemplateColumns: `minmax(220px, 1.6fr) repeat(${data.days.length}, ${data.days.length > 14 ? 34 : 46}px) 64px minmax(80px, 1fr) 78px 66px 56px 56px 110px` };
-  const minW = 220 + data.days.length * ((data.days.length > 14 ? 34 : 46) + 8) + 600;
+  const dayW = data.days.length > 14 ? 34 : 42;
+  const cols = { gridTemplateColumns: `minmax(200px, 1.6fr) repeat(${data.days.length}, ${dayW}px) 56px minmax(56px, 1fr) 62px 58px 50px 50px 104px` };
+  const minW = 200 + data.days.length * (dayW + 8) + 36 + 56 + 56 + 62 + 58 + 50 + 50 + 104 + 7 * 8;
   // Leads first, then Seniors, then Editors; within a tier, people we can count first, most edits first
   const members = [...team.members].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
 
