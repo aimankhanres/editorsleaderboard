@@ -460,7 +460,12 @@ function Review({ items }: { items: ReviewItem[] }) {
               <h3>{isOpen ? '▾' : '▸'} {REVIEW_LABEL[g.kind].title} <span className="count">{g.items.length}</span></h3>
               <span className="rsum">{money(sum)}{g.kind === 'name_mismatch' ? ' (already credited)' : ''}</span>
             </button>
-            <p className="hint">{REVIEW_LABEL[g.kind].hint}</p>
+            <div className="rbar">
+              <p className="hint">{REVIEW_LABEL[g.kind].hint}</p>
+              <button className="btn-ghost small" onClick={() => downloadCsv(g.kind, g.items)}>
+                ⬇ Download CSV{g.kind === 'no_editor' ? ` (${new Set(g.items.map(i => i.taskUrl ?? i.briefId)).size} tasks)` : ''}
+              </button>
+            </div>
             {isOpen && (
               <div className="scroll">
                 <table>
@@ -484,6 +489,43 @@ function Review({ items }: { items: ReviewItem[] }) {
       })}
     </div>
   );
+}
+
+const csvCell = (v: string | number | null | undefined) => {
+  const t = v == null ? '' : String(v);
+  return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+
+/**
+ * CSV of one Needs-review group. "Editor field empty" is one row per ClickUp task (what someone has to open and fix),
+ * biggest spend first; every other group is one row per ad, like the table.
+ */
+function downloadCsv(kind: ReviewKind, items: ReviewItem[]) {
+  let rows: (string | number | null | undefined)[][];
+  if (kind === 'no_editor') {
+    const byTask = new Map<string, { name: string; url: string; briefs: Set<string>; ads: Set<string>; spend: number; ad: string; adSpend: number }>();
+    for (const i of items) {
+      const k = i.taskUrl ?? i.briefId ?? i.adId;
+      const t = byTask.get(k) ?? { name: (i.detail ?? '').replace(/^Via resize:\s*/, ''), url: i.taskUrl ?? '', briefs: new Set(), ads: new Set(), spend: 0, ad: '', adSpend: -1 };
+      if (i.briefId) t.briefs.add(i.briefId);
+      t.ads.add(i.adId);
+      t.spend += i.spend;
+      if (i.spend > t.adSpend) { t.ad = i.adName; t.adSpend = i.spend; }
+      byTask.set(k, t);
+    }
+    rows = [['Task name', 'Task link', 'Brief ID', 'Ads', 'Spend (USD)', 'Biggest ad'],
+      ...[...byTask.values()].sort((a, b) => b.spend - a.spend).map(t => [t.name, t.url, [...t.briefs].join(' '), t.ads.size, t.spend.toFixed(2), t.ad])];
+  } else {
+    rows = [['Ad name', 'Brief ID', 'Task link', 'Detail', 'Spend (USD)'],
+      ...[...items].sort((a, b) => b.spend - a.spend).map(i => [i.adName, i.briefId, i.taskUrl, i.detail, i.spend.toFixed(2)])];
+  }
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `needs-review-${kind.replace(/_/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const fmtDate = (ymd: string) =>
