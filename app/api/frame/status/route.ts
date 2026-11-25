@@ -14,6 +14,12 @@ export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const url = new URL(req.url);
   if (url.searchParams.get('disconnect')) { await disconnect(); return NextResponse.json({ ok: true, disconnected: true }); }
+  // ?path=/accounts/... : read-only GET against the Frame.io v4 API (for working out the data model)
+  const path = url.searchParams.get('path');
+  if (path) {
+    if (!path.startsWith('/') || path.includes('..')) return NextResponse.json({ error: 'bad path' }, { status: 400 });
+    return NextResponse.json(await frameGet(path));
+  }
   const links = await q<{ frame_url: string; name: string }>(
     `SELECT frame_url, name FROM cu_tasks WHERE frame_url IS NOT NULL ORDER BY COALESCE(delivered, edit_done, updated_at) DESC NULLS LAST LIMIT 8`);
   const resolved = await Promise.all(links.slice(0, 4).map(async l => ({ link: l.frame_url, to: await resolveLink(l.frame_url).catch(e => `error: ${e}`) })));
