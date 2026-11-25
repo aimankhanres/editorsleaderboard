@@ -27,6 +27,7 @@ async function tokenCall(body: Record<string, string>): Promise<{ access_token: 
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: frameClientId(), client_secret: frameSecret(), ...body }),
     cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json.access_token) throw new Error(`Adobe token ${res.status}: ${JSON.stringify(json).slice(0, 200)}`);
@@ -59,7 +60,7 @@ async function accessToken(): Promise<string> {
 }
 
 export async function frameGet<T = unknown>(path: string): Promise<{ status: number; body: T }> {
-  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: 'no-store' });
+  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
   return { status: res.status, body: (await res.json().catch(() => null)) as T };
 }
 
@@ -74,7 +75,7 @@ export function fileIdFromUrl(url: string): string | null {
 export async function resolveLink(url: string): Promise<string> {
   let cur = url;
   for (let i = 0; i < 4; i++) {
-    const res = await fetch(cur, { redirect: 'manual', cache: 'no-store' });
+    const res = await fetch(cur, { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(15_000) });
     const loc = res.headers.get('location');
     if (!loc || res.status < 300 || res.status >= 400) return cur;
     cur = new URL(loc, cur).toString();

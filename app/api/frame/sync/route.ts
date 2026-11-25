@@ -6,7 +6,7 @@ import * as store from '@/lib/store';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const maxDuration = 300;
-const BUDGET_MS = 230_000;
+const BUDGET_MS = 200_000;
 
 /**
  * Looks up the video length behind each finished task's "Frame Io Link" (read-only towards Frame.io), newest

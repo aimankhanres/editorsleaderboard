@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isCronAuthorized } from '@/lib/auth';
 import { q } from '@/lib/db';
+import { frameStats } from '@/lib/store';
 import { connected, disconnect, fileIdFromUrl, frameConfigured, frameGet, resolveLink } from '@/lib/frame';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   if (url.searchParams.get('disconnect')) { await disconnect(); return NextResponse.json({ ok: true, disconnected: true }); }
   // ?path=/accounts/... : read-only GET against the Frame.io v4 API (for working out the data model)
+  if (url.searchParams.get('stats')) return NextResponse.json(await frameStats());
   const path = url.searchParams.get('path');
   if (path) {
     if (!path.startsWith('/') || path.includes('..')) return NextResponse.json({ error: 'bad path' }, { status: 400 });
