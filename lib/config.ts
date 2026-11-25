@@ -21,6 +21,6 @@ export const cfg = {
   refreshHours: Number(process.env.EDITOR_REFRESH_HOURS ?? 6),
   timezone: process.env.REPORT_TIMEZONE ?? 'America/New_York',
   hasDb: Boolean(process.env.DATABASE_URL),
-  /** Credit agency (6-digit) briefs to the original agency editor as well (AGENCY_CREDIT=on; ?agency=1 previews it) */
-  agencyCredit: process.env.AGENCY_CREDIT !== 'off' && process.env.AGENCY_CREDIT_DEFAULT === 'on',
+  /** Credit agency (6-digit) briefs to the original agency editor as well; ?agency=0 shows the numbers without it */
+  agencyCredit: process.env.AGENCY_CREDIT !== 'off', // on by default (Aiman, Nov 25 2026); AGENCY_CREDIT=off turns it off
 };
