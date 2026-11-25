@@ -34,7 +34,8 @@ export async function GET(req: Request) {
       `SELECT (e->>'id')::bigint AS id, max(e->>'name') AS name, COUNT(*)::int AS tasks,
               COUNT(*) FILTER (WHERE COALESCE(edit_done, delivered) > now() - interval '30 days')::int AS done30,
               mode() WITHIN GROUP (ORDER BY list_name) AS top_list
-         FROM cu_tasks, jsonb_array_elements(editors) e GROUP BY 1 ORDER BY tasks DESC`));
+         FROM cu_tasks, jsonb_array_elements(editors) e WHERE ($1::text IS NULL OR workspace = $1) GROUP BY 1 ORDER BY tasks DESC`,
+      [url.searchParams.get('ws')]));
   }
   // ?diag=editor&id=<clickup user id> : that editor's tasks touched in the last 14 days, with their dates (read-only)
   if (url.searchParams.get('diag') === 'editor') {
