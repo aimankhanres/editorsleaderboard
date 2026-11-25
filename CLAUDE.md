@@ -39,6 +39,16 @@ Details:
   the ClickUp custom task ID or stored in a custom field, and what type the Editor field is
   (people / dropdown / text). Handle all three types.
 
+## Agency briefs (6-digit IDs), on since Nov 25 2026
+
+- The agency ClickUp workspace (Resilia Creative Channel, 90141507124) is mirrored into cu_tasks (workspace='agency') with
+  CLICKUP_AGENCY_TOKEN. A 6-digit brief's original task there (Brief ID field, or name starting with the ID) is attached
+  to the brief (`store.loadBriefMap`, `BriefInfo.agency`).
+- Credit both: the original agency Editor gets the spend on their agency board, the resize editor (via resize task)
+  keeps it on Resizing. `attributed` counts the dollar once. `?agency=0` shows numbers without it; AGENCY_CREDIT=off
+  turns it off. Strategists fall back to the agency task's Strategist.
+- Agency roster members are linked by ClickUp user id (ids are global across workspaces).
+
 ## Teams (what the dashboard shows)
 
 - Boards: **Resizing**, **Iterations** and **Rips** (Resizing group), **Iterations** (own group), plus the Internal, Variations and Agency teams from the org chart. Rips (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
