@@ -76,6 +76,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ month, briefs: rows.length, summary, byAgencyEditor: Object.entries(byAgencyEditor).sort((a, b) => b[1] - a[1]),
       sample: rows.slice(0, 25) });
   }
+  // ?diag=agencydates : which completion dates agency tasks carry, by status (read-only)
+  if (url.searchParams.get('diag') === 'agencydates') {
+    await store.ensureTaskTables();
+    return NextResponse.json(await q(
+      `SELECT lower(status) status, status_type, COUNT(*)::int n, COUNT(edit_done)::int edit_done, COUNT(delivered)::int delivered,
+              COUNT(closed_at)::int closed, COUNT(assigned)::int assigned, COUNT(*) FILTER (WHERE jsonb_array_length(editors) > 0)::int with_editor,
+              to_char(max(updated_at), 'MM-DD') last_update
+         FROM cu_tasks WHERE workspace = 'agency' GROUP BY 1, 2 ORDER BY n DESC`));
+  }
   if (url.searchParams.get('diag')) {
     const p = await editorTasksPage(Number(url.searchParams.get('since') ?? 0), Number(url.searchParams.get('page') ?? 0));
     return NextResponse.json({ n: p.tasks.length, lastPage: p.lastPage, sample: p.tasks.slice(0, 3) });
