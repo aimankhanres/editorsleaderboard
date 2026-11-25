@@ -402,6 +402,12 @@ button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed {
 .table-frame .drow:hover td:first-child, .table-frame .drow.open td:first-child, .table-frame .dsub td:first-child { background: var(--hover); }
 .table-frame .dsub td:first-child { position: static; }
 
+/* Frame.io connect + notices */
+.side-connect { display: block; text-align: center; margin-bottom: 10px; padding: 8px 10px; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: 650; font-size: 13.5px; }
+.side-connect:hover { text-decoration: none; background: #6366f1; }
+.toast { position: sticky; top: 0; z-index: 25; display: flex; align-items: center; gap: 12px; justify-content: center; padding: 10px 16px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--line); }
+.toast button { font-size: 18px; line-height: 1; color: inherit; }
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }

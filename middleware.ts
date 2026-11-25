@@ -19,4 +19,4 @@ export function middleware(req: NextRequest) {
   });
 }
 
-export const config = { matcher: ['/((?!api/sync|api/tasks-sync|api/clickup-webhook|_next/static|_next/image|favicon.ico).*)'] };
+export const config = { matcher: ['/((?!api/sync|api/tasks-sync|api/clickup-webhook|api/frame/status|_next/static|_next/image|favicon.ico).*)'] };

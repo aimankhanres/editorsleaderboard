@@ -28,6 +28,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('auto');
+  const [frame, setFrame] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/api/frame/state').then(r => r.json()).then(setFrame).catch(() => {});
+    const f = new URLSearchParams(window.location.search).get('frame');
+    if (f) setNotice(f === 'connected' ? 'Frame.io connected. Minutes of video will appear after the next sync.'
+      : f === 'already' ? 'Frame.io is already connected.' : `Frame.io sign-in didn't finish (${f}). Try again.`);
+  }, []);
   useEffect(() => {
     try { const t = localStorage.getItem('theme') as Theme | null; if (t) setTheme(t); } catch { /* storage unavailable */ }
   }, []);
@@ -64,6 +72,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="side-foot">
+          {frame?.configured && !frame.connected && (
+            <a className="side-connect" href="/api/frame/connect">Connect Frame.io</a>
+          )}
           <div className="theme-tg" role="group" aria-label="Theme">
             {(['light', 'auto', 'dark'] as Theme[]).map(t => (
               <button key={t} className={theme === t ? 'on' : ''} aria-pressed={theme === t} onClick={() => pick(t)}>
@@ -73,7 +84,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
-      <div className="shell-main">{children}</div>
+      <div className="shell-main">
+        {notice && <div className="toast" role="status">{notice}<button aria-label="Dismiss" onClick={() => setNotice(null)}>×</button></div>}
+        {children}
+      </div>
     </div>
   );
 }

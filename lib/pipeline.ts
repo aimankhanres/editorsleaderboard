@@ -30,7 +30,7 @@ export type PipelinePayload = {
 
 const STALE_DAYS = 60;
 /** Statuses that hold ideas, not briefs in production ("Shelved Ideas", "High Intent Ideas"): never in the queue */
-const NOT_BRIEFS = '(shelved|ideas?)\\b';
+const NOT_BRIEFS = '(shelved|ideas?)\\y'; // Postgres: \y = word boundary
 
 export async function buildPipeline(opts: { from?: string | null; to?: string | null } = {}): Promise<PipelinePayload> {
   await ensureTaskTables();
