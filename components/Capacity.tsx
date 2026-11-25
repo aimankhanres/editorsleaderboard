@@ -306,7 +306,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
               </Fragment>
             ))}
           </div>
-          {untracked > 0 && team.measured && <p className="cap-note">{untracked} editor{untracked === 1 ? '' : 's'} on this team {untracked === 1 ? 'is' : 'are'} not in Resilia&apos;s ClickUp workspace (agency workspace), so their edits can&apos;t be counted here.</p>}
+          {untracked > 0 && team.measured && <p className="cap-note">{untracked} editor{untracked === 1 ? '' : 's'} on this team {untracked === 1 ? 'isn' : 'aren'}&apos;t linked to a ClickUp user yet, so their edits can&apos;t be counted.</p>}
         </div>
       )}
     </section>
@@ -325,7 +325,7 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
             <span className="name">{m.name}</span>
             <span className="role"><span className={`tier-badge ${m.tier}`}>{TIER_LABEL[m.tier]}</span>
               {m.alsoOn.length > 0 && <span className="board-chip" title={`Also on ${m.alsoOn.join(', ')}. Only edits from this team's ClickUp board count here.`}>+{m.alsoOn.join(', ')}</span>}
-              {!m.inClickUp && <span>{team.measured ? 'Not in Resilia ClickUp' : 'agency workspace'}</span>}</span>
+              {!m.inClickUp && <span>{team.measured ? 'Not linked to a ClickUp user' : 'agency workspace'}</span>}</span>
           </span>
         </span>
         {m.days.map((n, i) => {

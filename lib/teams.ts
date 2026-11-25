@@ -222,7 +222,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'oregano-agency', name: 'Oregano Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
+    id: 'oregano-agency', name: 'Oregano Agency', group: 'Agency', kpi: KPI_STANDARD,
     members: [
       { id: 89314312, name: 'Rehan', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: 106853461, name: 'DJ Bunda', role: 'Senior Editor' },
@@ -246,7 +246,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'garlic-agency', name: 'Garlic Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
+    id: 'garlic-agency', name: 'Garlic Agency', group: 'Agency', kpi: KPI_STANDARD,
     members: [
       { id: 89314312, name: 'Rehan', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: 106853455, name: 'Ahmad Muhmmad Khabir', role: 'Senior Editor' },
@@ -269,7 +269,7 @@ export const TEAMS: Team[] = [
     ],
   },
   {
-    id: 'cin-agency', name: 'Cin Agency', group: 'Agency', kpi: KPI_STANDARD, capacity: false,
+    id: 'cin-agency', name: 'Cin Agency', group: 'Agency', kpi: KPI_STANDARD,
     members: [
       { id: 112426642, name: 'Arifeen Ahmad', role: 'Lead Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
       { id: 106854520, name: 'Saharish Saleem', role: 'Senior Editor' }, // has older tasks in our ClickUp; current agency work is in the agency workspace
