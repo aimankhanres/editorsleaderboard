@@ -14,6 +14,11 @@ export type BriefInfo = {
   workspace?: string | null;
   product?: string | null;
   strategists?: EditorRef[];
+  /**
+   * 6-digit (agency) briefs: the original task in the agency ClickUp workspace. Its Editor(s) are credited on top of
+   * the resize editors (each on their own team board; the dollar is counted once in totals).
+   */
+  agency?: { editors: EditorRef[]; strategists: EditorRef[]; taskName: string | null; taskUrl: string | null; product: string | null } | null;
 };
 
 /** One ad's spend for the month, already summed across days */

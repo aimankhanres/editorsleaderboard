@@ -93,6 +93,19 @@ export function allocate(
     for (const briefId of ad.briefIds) {
       const info = briefs.get(briefId);
       const base = { adId: ad.adId, adName: ad.adName, spend: share, briefId, taskUrl: info?.taskUrl ?? null };
+      const resizeOk = !!info && info.status === 'ok' && info.editors.length > 0;
+      // Agency (6-digit) briefs: the original agency editor is credited too, on the agency board. The resize editor
+      // keeps their credit on the Resizing board; `attributed` counts the dollar once.
+      const agencyEds = (info?.agency?.editors ?? []).filter(e => !(resizeOk && info!.editors.some(x => x.key === e.key)));
+      if (info?.agency && agencyEds.length) {
+        credit(agencyEds, share, ad, {
+          ...info, taskId: null, taskName: info.agency.taskName, taskUrl: info.agency.taskUrl, editors: agencyEds,
+          status: 'ok', listId: null, workspace: 'agency', product: info.agency.product,
+        });
+        if (!resizeOk) attributed += share;
+        agencyEds.forEach(e => { creditedKeys.add(e.key); for (const t of tokens(e.name)) creditedTokens.add(t); });
+        if (!resizeOk) continue;
+      }
       if (!info || info.status === 'pending' || info.status === 'error') {
         review.push({ ...base, kind: 'pending', detail: info?.status === 'error' ? 'ClickUp lookup failed, will retry' : 'Not looked up yet' });
       } else if (info.status === 'not_found' && info.taskName) {
@@ -220,7 +233,8 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
  * `range` (inclusive dates) replaces the month: spend is summed over exactly those days, and rank
  * changes are not shown (there is no "yesterday" for an arbitrary range).
  */
-export async function buildLeaderboard(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null): Promise<LeaderboardPayload> {
+export async function buildLeaderboard(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null,
+  opts: { agency?: boolean } = {}): Promise<LeaderboardPayload> {
   if (!cfg.hasDb) {
     const { demoLeaderboard } = await import('./demo');
     return { ...demoLeaderboard(month, view), range, dataFrom: null, dataTo: null };
@@ -237,7 +251,7 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     store.dataSpan(),
   ]);
   const [briefMap, assetRows] = await Promise.all([
-    store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]),
+    store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: opts.agency ?? cfg.agencyCredit }),
     range ? store.assetsDone(range.from, addDays(range.to, 1), CAPACITY_TZ) : store.assetsDone(`${month}-01`, `${nextMonth(month)}-01`, CAPACITY_TZ),
   ]);
   const assets: AssetCount[] = assetRows.map(r => ({ key: `u:${r.uid}`, board: boardOf({ listId: r.list_id, workspace: r.workspace, product: r.product, name: r.name }), videos: r.videos, statics: r.statics, minutes: Number(r.minutes) || 0 }));

@@ -184,7 +184,7 @@ export async function markBriefsErrored(briefIds: string[]): Promise<void> {
   );
 }
 
-export async function loadBriefMap(briefIds: string[]): Promise<Map<string, BriefInfo>> {
+export async function loadBriefMap(briefIds: string[], opts: { agency?: boolean } = {}): Promise<Map<string, BriefInfo>> {
   const map = new Map<string, BriefInfo>();
   if (!briefIds.length) return map;
   await ensureTaskTables();
@@ -202,6 +202,24 @@ export async function loadBriefMap(briefIds: string[]): Promise<Map<string, Brie
       listId: r.list_id, workspace: r.workspace, product: r.product,
       strategists: (r.strategists ?? []).map(u => ({ key: `u:${u.id}`, name: u.name, avatar: null })),
     });
+  }
+  // 6-digit briefs live in the agency workspace: attach the original task there (Brief ID field, or a name that starts
+  // with the ID), preferring one with an Editor, oldest first.
+  const agencyIds = opts.agency ? briefIds.filter(id => /^[A-Z]+-\d{6,}$/.test(id)) : [];
+  if (agencyIds.length) {
+    const ag = await q<{ brief_id: string; name: string; url: string | null; product: string | null;
+      editors: { id: number; name: string }[]; strategists: { id: number; name: string }[] }>(
+      `SELECT DISTINCT ON (k.id) k.id AS brief_id, t.name, t.url, t.product, t.editors, t.strategists
+         FROM unnest($1::text[]) AS k(id)
+         JOIN cu_tasks t ON t.workspace = 'agency' AND (upper(t.brief_id) = k.id OR upper(t.name) LIKE k.id || '%')
+        ORDER BY k.id, (jsonb_array_length(t.editors) > 0) DESC, t.created_at NULLS LAST`, [agencyIds]);
+    const ref = (u: { id: number; name: string }): EditorRef => ({ key: `u:${u.id}`, name: u.name, avatar: null });
+    for (const a of ag) {
+      const agency = { editors: (a.editors ?? []).map(ref), strategists: (a.strategists ?? []).map(ref), taskName: a.name, taskUrl: a.url, product: a.product };
+      const cur = map.get(a.brief_id);
+      if (cur) cur.agency = agency;
+      else map.set(a.brief_id, { briefId: a.brief_id, taskId: null, taskName: null, taskUrl: null, editors: [], status: 'not_found', agency });
+    }
   }
   return map;
 }

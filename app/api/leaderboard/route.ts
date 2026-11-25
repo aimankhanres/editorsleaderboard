@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     range = { from, to };
   }
   try {
-    return NextResponse.json(await buildLeaderboard(range ? monthOf(range.to) : month, view, range), { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(await buildLeaderboard(range ? monthOf(range.to) : month, view, range, { agency: sp.get('agency') === '1' ? true : sp.get('agency') === '0' ? false : undefined }), { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
     console.error('leaderboard failed', e);
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 });

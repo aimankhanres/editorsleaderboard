@@ -51,13 +51,13 @@ export default function Teams() {
       {data && (
         <>
           <section className="stats">
-            <Stat label="Internal teams" value={money(tI)} sub={`${tI + tA ? Math.round((tI / (tI + tA)) * 100) : 0}% of team spend · ${internal.length} teams`} />
-            <Stat label="Agency teams" value={money(tA)} sub={`${tI + tA ? Math.round((tA / (tI + tA)) * 100) : 0}% of team spend · ${agency.length} teams`} />
+            <Stat label="Internal teams" value={money(tI)} sub={`${data.attributed ? Math.round((tI / data.attributed) * 100) : 0}% of ${money(data.attributed)} credited · ${internal.length} teams`} />
+            <Stat label="Agency teams" value={money(tA)} sub={`${data.attributed ? Math.round((tA / data.attributed) * 100) : 0}% of ${money(data.attributed)} credited · ${agency.length} teams`} />
             <Stat label="Best spend per editor" value={best ? money(best.per) : '—'} sub={best?.t.name ?? ''} accent />
             <Stat label="Not credited yet" value={money(review)} sub="ads in Needs review on Editors" warn={review > 0} />
           </section>
           <Section title="Internal" teams={internal} total={tI} />
-          <Section title="Agency" teams={agency} total={tA} note="Agency editors who aren't in Resilia's ClickUp can't be credited yet; their spend shows here once agency briefs are mapped." />
+          <Section title="Agency" teams={agency} total={tA} note="Agency briefs (6-digit IDs) are credited to the original editor in the agency's ClickUp. When Resizing resized them, the same spend also counts on the Resizing board, so Internal + Agency can add up to more than the total credited." />
           <p className="cap-foot">
             A person on two teams counts on each team only for briefs from that team&apos;s ClickUp board (task origin); briefs from other lists count
             on their first team. Click a team to open it on the Editors screen.

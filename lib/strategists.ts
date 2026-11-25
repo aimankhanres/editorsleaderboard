@@ -26,14 +26,15 @@ export type StrategistPayload = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRODUCT: Record<string, string> = { OO: 'Oregano', AOG: 'Garlic', CIN: 'Cinnamon' };
 
-export async function buildStrategists(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null): Promise<StrategistPayload> {
+export async function buildStrategists(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null,
+  opts: { agency?: boolean } = {}): Promise<StrategistPayload> {
   const store = await import('./store');
   const [ads, months, span] = await Promise.all([
     range ? store.loadAds(range.from, addDays(range.to, 1), viewChannels(view)) : store.loadAds(`${month}-01`, `${nextMonth(month)}-01`, viewChannels(view)),
     store.monthsAvailable(),
     store.dataSpan(),
   ]);
-  const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]);
+  const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: opts.agency ?? cfg.agencyCredit });
   type Acc = { key: string; name: string; spend: number; ads: Set<string>; briefs: Map<string, { taskName: string | null; taskUrl: string | null; spend: number }>;
     winners: Map<string, WinnerAd>; editors: Map<string, number>; products: Set<string> };
   const acc = new Map<string, Acc>();
@@ -46,9 +47,13 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     const share = ad.spend / ad.briefIds.length;
     for (const id of ad.briefIds) {
       const info = briefs.get(id);
-      if (!info || info.status !== 'ok' || !info.editors.length) continue; // not credited to an editor
+      const resizeOk = !!info && info.status === 'ok' && info.editors.length > 0;
+      const agencyOk = !!info?.agency?.editors.length;
+      if (!info || (!resizeOk && !agencyOk)) continue; // not credited to an editor
       attributed += share;
-      const strats = info.strategists ?? [];
+      // Agency briefs: the strategist on the original agency task (the resize task rarely has one)
+      const strats = info.strategists?.length ? info.strategists : info.agency?.strategists ?? [];
+      const eds = [...(resizeOk ? info.editors : []), ...(info.agency?.editors ?? [])];
       if (!strats.length) { none.spend += share; none.briefs.add(id); continue; }
       withStrategist += share;
       const each = cfg.splitMode === 'joint' ? share : share / strats.length;
@@ -57,11 +62,11 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
         if (!a) { a = { key: st.key, name: st.name, spend: 0, ads: new Set(), briefs: new Map(), winners: new Map(), editors: new Map(), products: new Set() }; acc.set(st.key, a); }
         a.spend += each;
         a.ads.add(ad.adId);
-        const b = a.briefs.get(id) ?? { taskName: info.taskName, taskUrl: info.taskUrl, spend: 0 };
+        const b = a.briefs.get(id) ?? { taskName: info.agency?.taskName ?? info.taskName, taskUrl: info.agency?.taskUrl ?? info.taskUrl, spend: 0 };
         b.spend += each;
         a.briefs.set(id, b);
-        if (ad.spend >= cfg.winnerSpend && !a.winners.has(ad.adId)) a.winners.set(ad.adId, { adId: ad.adId, adName: ad.adName, spend: round2(ad.spend), briefId: id, taskUrl: info.taskUrl });
-        for (const e of info.editors) a.editors.set(e.name, (a.editors.get(e.name) ?? 0) + each / info.editors.length);
+        if (ad.spend >= cfg.winnerSpend && !a.winners.has(ad.adId)) a.winners.set(ad.adId, { adId: ad.adId, adName: ad.adName, spend: round2(ad.spend), briefId: id, taskUrl: info.agency?.taskUrl ?? info.taskUrl });
+        for (const e of eds) a.editors.set(e.name, (a.editors.get(e.name) ?? 0) + each / eds.length);
         const p = PRODUCT[id.match(/^[A-Z]+/)?.[0] ?? ''];
         if (p) a.products.add(p);
       }
