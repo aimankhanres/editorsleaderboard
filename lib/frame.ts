@@ -69,3 +69,15 @@ export function fileIdFromUrl(url: string): string | null {
     ?? url.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?!.*[0-9a-f]{8}-)/i);
   return m?.[1] ?? null;
 }
+
+/** Follow an f.io short link (and any further redirects) to the full Frame URL, without loading the page */
+export async function resolveLink(url: string): Promise<string> {
+  let cur = url;
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch(cur, { redirect: 'manual', cache: 'no-store' });
+    const loc = res.headers.get('location');
+    if (!loc || res.status < 300 || res.status >= 400) return cur;
+    cur = new URL(loc, cur).toString();
+  }
+  return cur;
+}
