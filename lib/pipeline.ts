@@ -29,6 +29,8 @@ export type PipelinePayload = {
 };
 
 const STALE_DAYS = 60;
+/** Statuses that hold ideas, not briefs in production ("Shelved Ideas", "High Intent Ideas"): never in the queue */
+const NOT_BRIEFS = '(shelved|ideas?)\\b';
 
 export async function buildPipeline(opts: { from?: string | null; to?: string | null } = {}): Promise<PipelinePayload> {
   await ensureTaskTables();
@@ -40,7 +42,7 @@ export async function buildPipeline(opts: { from?: string | null; to?: string | 
     open: boolean; has_editor: boolean; created: boolean; delivered_in: boolean; age_days: number | null; n: number;
   }>(
     `SELECT list_id, workspace, product, min(name) AS name, lower(status) AS status,
-            (delivered IS NULL AND closed_at IS NULL AND COALESCE(status_type, '') NOT IN ('closed', 'done')) AS open,
+            (delivered IS NULL AND closed_at IS NULL AND COALESCE(status_type, '') NOT IN ('closed', 'done') AND COALESCE(status, '') !~* $5) AS open,
             jsonb_array_length(editors) > 0 AS has_editor,
             (created_at AT TIME ZONE $1)::date BETWEEN $2::date AND $3::date AS created,
             COALESCE((delivered AT TIME ZONE $1)::date BETWEEN $2::date AND $3::date, false) AS delivered_in,
@@ -49,14 +51,14 @@ export async function buildPipeline(opts: { from?: string | null; to?: string | 
        FROM cu_tasks
       WHERE (workspace = 'resilia' AND list_id = ANY($4::text[])) OR workspace = 'agency'
       GROUP BY 1, 2, 3, 5, 6, 7, 8, 9`,
-    [CAPACITY_TZ, from, to, PIPELINE_LISTS],
+    [CAPACITY_TZ, from, to, PIPELINE_LISTS, NOT_BRIEFS],
   );
   const stale = await q<{ list_id: string | null; workspace: string; product: string | null; name: string; n: number }>(
     `SELECT list_id, workspace, product, min(name) AS name, COUNT(*)::int AS n FROM cu_tasks
       WHERE ((workspace = 'resilia' AND list_id = ANY($1::text[])) OR workspace = 'agency')
         AND delivered IS NULL AND closed_at IS NULL AND COALESCE(status_type, '') NOT IN ('closed', 'done')
-        AND created_at < now() - make_interval(days => $2::int)
-      GROUP BY 1, 2, 3`, [PIPELINE_LISTS, STALE_DAYS]);
+        AND COALESCE(status, '') !~* $3 AND created_at < now() - make_interval(days => $2::int)
+      GROUP BY 1, 2, 3`, [PIPELINE_LISTS, STALE_DAYS, NOT_BRIEFS]);
 
   const cap = await buildCapacity({ week: mondayOf(today) });
   const capBy = new Map(cap.teams.map(t => [t.id, t]));

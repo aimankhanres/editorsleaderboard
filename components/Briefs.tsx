@@ -75,7 +75,7 @@ export default function Briefs() {
           <Section title="Internal" teams={internal} color={color} open={open} setOpen={setOpen} />
           <Section title="Agency" teams={agency} color={color} open={open} setOpen={setOpen} />
           <p className="cap-foot">
-            Queue = tasks with no Asset Delivered Date that aren&apos;t closed in ClickUp. Weeks queued = queue ÷ one week of the team&apos;s capacity
+            Queue = tasks with no Asset Delivered Date that aren&apos;t closed in ClickUp; idea statuses (Shelved Ideas, High Intent Ideas) are left out. Weeks queued = queue ÷ one week of the team&apos;s capacity
             (editors × KPI); over 1 week means more briefs than the team can finish this week. Stale = queued and created more than 60 days ago.
             Agency capacity can&apos;t be measured yet, so agency teams show the queue only.
           </p>
