@@ -467,14 +467,16 @@ export async function requeueInternalBriefs(): Promise<number> {
 
 // ------------------------------------------------------------------ Frame.io durations
 
+/** Lookups older than this that failed (or were whole shares, before shares were supported) are retried */
+const RETRY_BEFORE = new Date(Math.max(Date.now() - 864e5, Date.parse('2026-11-25T13:30:00Z'))).toISOString();
 /** Frame links of finished tasks not looked up yet (errors retried after a day), most recently finished first */
 export async function frameLinksToCheck(limit: number): Promise<string[]> {
   await ensureTaskTables();
   const rows = await q<{ frame_url: string }>(
     `SELECT t.frame_url FROM cu_tasks t LEFT JOIN frame_media f ON f.frame_url = t.frame_url
       WHERE t.frame_url ~* '^https?://' AND COALESCE(t.edit_done, t.delivered) IS NOT NULL
-        AND (f.frame_url IS NULL OR (f.kind IN ('error', 'unresolved') AND f.checked_at < now() - interval '1 day'))
-      GROUP BY t.frame_url ORDER BY max(COALESCE(t.edit_done, t.delivered)) DESC LIMIT $1`, [limit]);
+        AND (f.frame_url IS NULL OR (f.kind IN ('error', 'unresolved', 'share') AND f.checked_at < $2::timestamptz))
+      GROUP BY t.frame_url ORDER BY max(COALESCE(t.edit_done, t.delivered)) DESC LIMIT $1`, [limit, RETRY_BEFORE]);
   return rows.map(r => r.frame_url);
 }
 
