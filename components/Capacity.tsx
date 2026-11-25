@@ -242,8 +242,8 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
   const mark = Math.min(100, pct(team.expected, team.target));
   const maxHist = Math.max(1, ...team.history.map(h => Math.max(h.done, h.target)));
   const dayW = data.days.length > 14 ? 34 : 42;
-  const cols = { gridTemplateColumns: `minmax(200px, 1.6fr) repeat(${data.days.length}, ${dayW}px) 56px minmax(56px, 1fr) 62px 58px 50px 50px 104px` };
-  const minW = 200 + data.days.length * (dayW + 8) + 36 + 56 + 56 + 62 + 58 + 50 + 50 + 104 + 7 * 8;
+  const cols = { gridTemplateColumns: `minmax(200px, 1.6fr) repeat(${data.days.length}, ${dayW}px) 56px minmax(56px, 1fr) 62px 58px 50px 50px 44px 104px` };
+  const minW = 200 + data.days.length * (dayW + 8) + 36 + 56 + 56 + 62 + 58 + 50 + 50 + 44 + 104 + 8 * 8;
   // Leads first, then Seniors, then Editors; within a tier, people we can count first, most edits first
   const members = [...team.members].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || Number(b.inClickUp) - Number(a.inClickUp) || b.done - a.done || a.name.localeCompare(b.name));
 
@@ -296,6 +296,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
               <span role="columnheader" className="r" title="Tasks assigned to this editor (last 45 days) that aren't finished yet">In queue</span>
               <span role="columnheader" className="r" title="Videos finished in the period">Videos</span>
               <span role="columnheader" className="r" title="Statics finished in the period (ClickUp Size: Static 4x5, or format Static)">Statics</span>
+              <span role="columnheader" className="r" title="Minutes of finished video (Frame.io)">Min</span>
               <span role="columnheader">Status</span>
             </div>
             {members.map((m, i) => (
@@ -341,6 +342,7 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
         <span role="cell" className="r">{m.inClickUp ? m.open : '—'}</span>
         <span role="cell" className="r">{m.inClickUp ? m.videos : '—'}</span>
         <span role="cell" className="r">{m.inClickUp ? m.statics : '—'}</span>
+        <span role="cell" className="r">{m.inClickUp ? Math.round(m.minutes) : '—'}</span>
         <span role="cell"><span className={`pace ${PACE[m.pace].cls}`}>{PACE[m.pace].label}</span></span>
       </button>
       {open && (

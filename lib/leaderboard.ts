@@ -164,7 +164,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Ranks and rank changes are within the team: yesterday's rank comes from re-ranking yesterday's
  * snapshot spends among the same members.
  */
-export type AssetCount = { key: string; board: string | null; videos: number; statics: number };
+export type AssetCount = { key: string; board: string | null; videos: number; statics: number; minutes: number };
 
 export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string, number>, teams: Team[] = TEAMS,
   assets: AssetCount[] = []): TeamBoard[] {
@@ -184,7 +184,7 @@ export function buildTeams(editors: Allocation['editors'], prevSpend: Map<string
     };
   };
   const assetsOf = (key: string, teamId: string) => assets.filter(a => a.key === key && countsOnTeam(key, teamId, a.board))
-    .reduce((acc, a) => ({ videos: acc.videos + a.videos, statics: acc.statics + a.statics }), { videos: 0, statics: 0 });
+    .reduce((acc, a) => ({ videos: acc.videos + a.videos, statics: acc.statics + a.statics, minutes: acc.minutes + a.minutes }), { videos: 0, statics: 0, minutes: 0 });
   return teams.map(team => {
     const rows = team.members.map(m => {
       const key = memberKey(m);
@@ -240,7 +240,7 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))]),
     range ? store.assetsDone(range.from, addDays(range.to, 1), CAPACITY_TZ) : store.assetsDone(`${month}-01`, `${nextMonth(month)}-01`, CAPACITY_TZ),
   ]);
-  const assets: AssetCount[] = assetRows.map(r => ({ key: `u:${r.uid}`, board: boardOf({ listId: r.list_id, workspace: r.workspace, product: r.product, name: r.name }), videos: r.videos, statics: r.statics }));
+  const assets: AssetCount[] = assetRows.map(r => ({ key: `u:${r.uid}`, board: boardOf({ listId: r.list_id, workspace: r.workspace, product: r.product, name: r.name }), videos: r.videos, statics: r.statics, minutes: Number(r.minutes) || 0 }));
   const alloc = allocate(ads, briefMap, roster);
   return {
     month,

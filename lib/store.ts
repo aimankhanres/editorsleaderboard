@@ -209,11 +209,13 @@ export async function loadBriefMap(briefIds: string[]): Promise<Map<string, Brie
 /** Assets each editor finished in [from, toExclusive) (in `tz`), by board, videos vs statics */
 export async function assetsDone(from: string, toExclusive: string, tz: string) {
   await ensureTaskTables();
-  return q<{ uid: string; list_id: string | null; workspace: string | null; product: string | null; name: string; statics: number; videos: number }>(
+  return q<{ uid: string; list_id: string | null; workspace: string | null; product: string | null; name: string; statics: number; videos: number; minutes: number }>(
     `SELECT u::text AS uid, list_id, workspace, product, min(name) AS name,
-            COUNT(*) FILTER (WHERE st)::int AS statics, COUNT(*) FILTER (WHERE NOT st)::int AS videos
-       FROM (SELECT *, (EXISTS (SELECT 1 FROM unnest(sizes) z WHERE z ILIKE 'static%') OR COALESCE(format, '') ILIKE 'static%') AS st
-               FROM cu_tasks
+            COUNT(*) FILTER (WHERE st)::int AS statics, COUNT(*) FILTER (WHERE NOT st)::int AS videos,
+            COALESCE(sum(secs) FILTER (WHERE NOT st), 0)::float / 60 AS minutes
+       FROM (SELECT c.*, (EXISTS (SELECT 1 FROM unnest(c.sizes) z WHERE z ILIKE 'static%') OR COALESCE(c.format, '') ILIKE 'static%') AS st,
+                    (SELECT f.seconds FROM frame_media f WHERE f.frame_url = c.frame_url AND f.kind = 'video') AS secs
+               FROM cu_tasks c
               WHERE COALESCE(edit_done, delivered) >= ($1::date)::timestamp AT TIME ZONE $3
                 AND COALESCE(edit_done, delivered) <  ($2::date)::timestamp AT TIME ZONE $3) t, unnest(editor_ids) u
       GROUP BY 1, 2, 3, 4`, [from, toExclusive, tz]);
@@ -354,6 +356,7 @@ const TASK_DDL = [
   `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS mirrored_at timestamptz`,
   `CREATE INDEX IF NOT EXISTS cu_tasks_strat_idx ON cu_tasks USING gin (strategist_ids)`,
   `CREATE INDEX IF NOT EXISTS cu_tasks_list_idx ON cu_tasks (list_id)`,
+  `CREATE TABLE IF NOT EXISTS frame_media ( frame_url text PRIMARY KEY, kind text NOT NULL, file_id text, seconds numeric(10,3), media_type text, name text, error text, checked_at timestamptz NOT NULL DEFAULT now() )`,
 ];
 export async function ensureTaskTables(): Promise<void> {
   if (tasksSchemaReady) return;
@@ -460,4 +463,33 @@ export async function requeueInternalBriefs(): Promise<number> {
      SELECT COUNT(*) AS n FROM u`,
   );
   return Number(rows[0]?.n ?? 0);
+}
+
+// ------------------------------------------------------------------ Frame.io durations
+
+/** Frame links of finished tasks not looked up yet (errors retried after a day), most recently finished first */
+export async function frameLinksToCheck(limit: number): Promise<string[]> {
+  await ensureTaskTables();
+  const rows = await q<{ frame_url: string }>(
+    `SELECT t.frame_url FROM cu_tasks t LEFT JOIN frame_media f ON f.frame_url = t.frame_url
+      WHERE t.frame_url ~* '^https?://' AND COALESCE(t.edit_done, t.delivered) IS NOT NULL
+        AND (f.frame_url IS NULL OR (f.kind IN ('error', 'unresolved') AND f.checked_at < now() - interval '1 day'))
+      GROUP BY t.frame_url ORDER BY max(COALESCE(t.edit_done, t.delivered)) DESC LIMIT $1`, [limit]);
+  return rows.map(r => r.frame_url);
+}
+
+export async function saveFrameMedia(url: string, d: import('./frame').Duration): Promise<void> {
+  await q(`INSERT INTO frame_media (frame_url, kind, file_id, seconds, media_type, name, error, checked_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+           ON CONFLICT (frame_url) DO UPDATE SET kind = EXCLUDED.kind, file_id = EXCLUDED.file_id, seconds = EXCLUDED.seconds,
+             media_type = EXCLUDED.media_type, name = EXCLUDED.name, error = EXCLUDED.error, checked_at = now()`,
+  [url, d.kind, d.fileId, d.seconds, d.mediaType, d.name, d.error ?? null]);
+}
+
+export async function frameStats() {
+  await ensureTaskTables();
+  const r = await q<{ kind: string; n: number; minutes: number }>(`SELECT kind, COUNT(*)::int n, COALESCE(round(sum(seconds) / 60), 0)::int minutes FROM frame_media GROUP BY 1`);
+  const left = await q<{ n: number }>(`SELECT COUNT(DISTINCT t.frame_url)::int n FROM cu_tasks t LEFT JOIN frame_media f ON f.frame_url = t.frame_url
+     WHERE t.frame_url ~* '^https?://' AND COALESCE(t.edit_done, t.delivered) IS NOT NULL AND f.frame_url IS NULL`);
+  return { byKind: r, remaining: left[0]?.n ?? 0 };
 }

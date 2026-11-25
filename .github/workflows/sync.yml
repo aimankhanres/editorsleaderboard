@@ -50,3 +50,18 @@ jobs:
             echo "::warning::Task sync hit a temporary problem (HTTP $code); the next run continues"; exit 0
           fi
           echo "::error::Task sync failed with HTTP $code"; exit 1
+      - name: Call /api/frame/sync (video minutes from Frame.io)
+        if: ${{ !cancelled() }}
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$SYNC_URL" ]; then echo "SYNC_URL not set, skipping"; exit 0; fi
+          FRAME_URL="${SYNC_URL%/sync}/frame/sync"
+          rm -f body.json
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 330 -H "Authorization: Bearer $CRON_SECRET" "$FRAME_URL") || true
+          code=${code:-000}
+          cat body.json 2>/dev/null || true; echo
+          if [ "$code" = "200" ]; then exit 0; fi
+          # Frame.io hiccups and timeouts: every lookup is saved as it goes, so the next run continues
+          echo "::warning::Frame sync hit a problem (HTTP $code); the next run continues"; exit 0

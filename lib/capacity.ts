@@ -18,7 +18,7 @@ export type Pace = 'met' | 'on' | 'behind' | 'none' | 'lead';
 export type CapacityMember = {
   key: string; name: string; role: string; tier: Tier;
   /** finished in the period: videos vs statics (ClickUp "Size" Static 4x5 / "Video Format/Style" Static) */
-  videos: number; statics: number;
+  videos: number; statics: number; minutes: number;
   /** other teams this person is also on (their edits are split by the board each task came from) */
   alsoOn: string[];
   /** counted here: in Resilia's ClickUp and on a team whose edits happen there */
@@ -80,10 +80,11 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
 
   // Finished tasks per editor, from the start of the history window to the end of this week
   type Place = { list_id: string | null; workspace: string | null; product: string | null; name: string };
-  const doneRows = await q<Place & { uid: string; day: string; url: string | null; task_id: string; is_static: boolean }>(
+  const doneRows = await q<Place & { uid: string; day: string; url: string | null; task_id: string; is_static: boolean; secs: number | null }>(
     `SELECT u::text AS uid, to_char((COALESCE(edit_done, delivered) AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS day,
             name, url, task_id, list_id, workspace, product,
-            (EXISTS (SELECT 1 FROM unnest(sizes) z WHERE z ILIKE 'static%') OR format ILIKE 'static%') AS is_static
+            (EXISTS (SELECT 1 FROM unnest(sizes) z WHERE z ILIKE 'static%') OR format ILIKE 'static%') AS is_static,
+            (SELECT f.seconds FROM frame_media f WHERE f.frame_url = cu_tasks.frame_url AND f.kind = 'video')::float AS secs
        FROM cu_tasks, unnest(editor_ids) AS u
       WHERE u = ANY($2::bigint[])
         AND COALESCE(edit_done, delivered) >= ($3::date - 1)::timestamp AT TIME ZONE 'UTC'
@@ -102,12 +103,12 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
   const place = (r: Place) => boardOf({ listId: r.list_id, workspace: r.workspace, product: r.product, name: r.name });
   const openBy = new Map<number, { board: string | null; n: number }[]>();
   for (const r of openRows) openBy.set(Number(r.uid), [...(openBy.get(Number(r.uid)) ?? []), { board: place(r), n: Number(r.n) }]);
-  type Done = DoneTask & { board: string | null };
+  type Done = DoneTask & { board: string | null; secs: number };
   const byUser = new Map<number, Done[]>();
   for (const r of doneRows) {
     if (r.day < qFrom || r.day > weekEnd) continue;
     const list = byUser.get(Number(r.uid)) ?? [];
-    list.push({ day: r.day, name: r.name, url: r.url ?? `https://app.clickup.com/t/${r.task_id}`, isStatic: !!r.is_static, board: place(r) });
+    list.push({ day: r.day, name: r.name, url: r.url ?? `https://app.clickup.com/t/${r.task_id}`, isStatic: !!r.is_static, board: place(r), secs: r.is_static ? 0 : Number(r.secs) || 0 });
     byUser.set(Number(r.uid), list);
   }
   const teamName = new Map(TEAMS.map(t => [t.id, t.name]));
@@ -135,7 +136,8 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
       const openN = m.id ? (openBy.get(m.id) ?? []).filter(o => countsOnTeam(key, team.id, o.board)).reduce((a, o) => a + o.n, 0) : 0;
       return {
         key, name: m.name, role: m.role, tier, inClickUp: m.id != null, days: counts, done, target, expected,
-        remaining: Math.max(0, target - done), open: openN, pace, tasks: mine.map(({ board: _b, ...t }) => t),
+        remaining: Math.max(0, target - done), open: openN, pace, tasks: mine.map(({ board: _b, secs: _s, ...t }) => t),
+        minutes: Math.round(mine.reduce((a, t) => a + t.secs, 0) / 6) / 10,
         videos: mine.filter(t => !t.isStatic).length, statics: mine.filter(t => t.isStatic).length,
         alsoOn: [...new Set(TEAMS.filter(t => t.id !== team.id && t.members.some(x => memberKey(x) === key)).map(t => teamName.get(t.id) ?? t.id))],
       };
@@ -171,7 +173,7 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
     const target = Math.max(prev.target, m.target), expected = Math.max(prev.expected, m.expected), done = prev.done + m.done;
     const pace: Pace = m.tier === 'lead' ? 'lead' : done >= target ? 'met' : done >= expected - 1 ? 'on' : 'behind';
     people.set(m.key, { ...prev, done, target, expected, remaining: Math.max(0, target - done), open: prev.open + m.open, pace,
-      videos: prev.videos + m.videos, statics: prev.statics + m.statics });
+      videos: prev.videos + m.videos, statics: prev.statics + m.statics, minutes: prev.minutes + m.minutes });
   }
   const ppl = [...people.values()];
   const s = (f: (x: CapacityMember) => number) => ppl.reduce((a, x) => a + f(x), 0);

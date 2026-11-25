@@ -81,3 +81,49 @@ export async function resolveLink(url: string): Promise<string> {
   }
   return cur;
 }
+
+// ------------------------------------------------------------------ video durations (minutes of content)
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+type Meta = { field_definition_name?: string; value?: unknown };
+type FrameEntity = { id: string; type?: string; name?: string; media_type?: string; head_version?: { id: string; type?: string; media_type?: string }; metadata?: Meta[] };
+let accountCache: string | null = null;
+
+async function accountId(): Promise<string> {
+  if (accountCache) return accountCache;
+  const r = await frameGet<{ data?: { id: string }[] }>('/accounts');
+  const id = r.body?.data?.[0]?.id;
+  if (!id) throw new Error(`Frame accounts ${r.status}`);
+  return (accountCache = id);
+}
+
+let lastFrameCall = 0;
+async function slowGet<T>(path: string) {
+  const wait = lastFrameCall + 700 - Date.now(); // stay under 100 calls / minute
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastFrameCall = Date.now();
+  return frameGet<T>(path);
+}
+
+export type Duration = { kind: 'video' | 'image' | 'other' | 'share' | 'unresolved' | 'error'; fileId: string | null; seconds: number | null; mediaType: string | null; name: string | null; error?: string };
+
+/**
+ * Length of the video behind a ClickUp "Frame Io Link": f.io short link -> share URL -> version stack (latest version)
+ * or file -> metadata "Duration" (seconds). Whole-share links with no single asset are reported as kind 'share'.
+ */
+export async function durationOf(link: string): Promise<Duration> {
+  const to = await resolveLink(link);
+  const m = to.match(new RegExp(`/share/${UUID}/(?:view/)?(${UUID})`, 'i')) ?? to.match(new RegExp(`/(?:view|player)/(${UUID})`, 'i'));
+  if (!m) return { kind: /\/share\//.test(to) ? 'share' : 'unresolved', fileId: null, seconds: null, mediaType: null, name: null };
+  const acc = await accountId();
+  let fileId = m[1];
+  const vs = await slowGet<{ data?: FrameEntity }>(`/accounts/${acc}/version_stacks/${fileId}`);
+  if (vs.status === 200 && vs.body.data?.head_version?.id) fileId = vs.body.data.head_version.id;
+  const f = await slowGet<{ data?: FrameEntity; errors?: { detail?: string }[] }>(`/accounts/${acc}/files/${fileId}?include=metadata`);
+  if (f.status !== 200 || !f.body.data) return { kind: 'error', fileId, seconds: null, mediaType: null, name: null, error: `${f.status} ${f.body.errors?.[0]?.detail ?? ''}`.trim() };
+  const d = f.body.data;
+  const dur = d.metadata?.find(x => x.field_definition_name === 'Duration')?.value;
+  const mt = d.media_type ?? null;
+  const seconds = typeof dur === 'number' && dur > 0 ? dur : null;
+  return { kind: mt?.startsWith('video') ? 'video' : mt?.startsWith('image') ? 'image' : seconds ? 'video' : 'other', fileId, seconds, mediaType: mt, name: d.name ?? null };
+}

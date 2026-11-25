@@ -46,6 +46,8 @@ export type EditorRow = {
   /** Assets finished in the period (ClickUp Edit Complete / Asset Delivered date), videos vs statics */
   videos?: number;
   statics?: number;
+  /** Minutes of finished video (Frame.io durations of the tasks' Frame links) */
+  minutes?: number;
   /** People on several teams: their spend per team board (this row shows only this team's part) */
   boards?: { team: string; name: string; spend: number; ads: number }[];
 };
