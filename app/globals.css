@@ -87,7 +87,7 @@ a:hover { text-decoration: underline; }
 .r { text-align: right; }
 .muted { color: var(--muted); margin: 4px 0; font-size: 14px; }
 
-.wrap { max-width: 1160px; margin: 0 auto; padding: 32px 20px 80px; }
+.wrap { max-width: 1600px; margin: 0 auto; padding: 30px 32px 80px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
 
 /* Header */
@@ -387,6 +387,20 @@ tr:last-child td { border-bottom: 0; }
   .thead, .row-main { grid-template-columns: 52px minmax(180px, 2fr) 76px 50px 50px 36px 92px minmax(90px, 1fr) 14px; gap: 10px; padding: 0 14px; }
   .thead .c-opt, .row-main .c-opt { display: none; }
 }
+
+/* Frozen panes: wide tables scroll inside their card with the header row and the name column pinned */
+.cap-scroll { overflow: auto; max-height: calc(100vh - 120px); }
+.cap-th { position: sticky; top: 0; z-index: 3; }
+.cap-row > .c-ed { position: sticky; left: 0; z-index: 2; background: var(--card); margin-left: -18px; padding-left: 18px; align-self: stretch; }
+.cap-th > span:first-child { position: sticky; left: 0; z-index: 4; background: var(--soft); margin-left: -18px; padding-left: 18px; align-self: stretch; display: flex; align-items: center; }
+button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed { background: var(--hover); }
+.tier-sep { position: sticky; left: 0; }
+.table-frame { overflow: auto; max-height: calc(100vh - 120px); }
+.table-frame .dtable thead th { position: sticky; top: 0; z-index: 3; }
+.table-frame .dtable td:first-child, .table-frame .dtable th:first-child { position: sticky; left: 0; z-index: 2; background: var(--card); }
+.table-frame .dtable th:first-child { z-index: 4; background: var(--soft); }
+.table-frame .drow:hover td:first-child, .table-frame .drow.open td:first-child, .table-frame .dsub td:first-child { background: var(--hover); }
+.table-frame .dsub td:first-child { position: static; }
 
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }

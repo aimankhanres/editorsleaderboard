@@ -90,7 +90,7 @@ function Section({ title, teams, color, open, setOpen }: { title: string; teams:
   return (
     <>
       <div className="sec-h"><h2>{title}</h2><span>{teams.length} teams · {total} briefs in queue</span></div>
-      <div className="card scroll">
+      <div className="card table-frame">
         <table className="dtable">
           <thead>
             <tr><th>Team</th><th>Queue by status</th><th className="r">In queue</th><th className="r">Waiting for editor</th><th className="r">With editor</th>

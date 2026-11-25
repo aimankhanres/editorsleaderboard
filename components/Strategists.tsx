@@ -61,7 +61,7 @@ export default function Strategists() {
             <input className="search" type="search" placeholder="Search strategist" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search strategists" />
           </section>
 
-          <div className="card scroll">
+          <div className="card table-frame">
             <table className="dtable">
               <thead>
                 <tr><th>#</th><th>Strategist</th><th className="r">Spend</th><th>Share</th><th className="r">Briefs</th><th className="r">Ads</th>

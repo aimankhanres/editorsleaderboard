@@ -62,7 +62,7 @@ export default function Capacity() {
     return () => clearInterval(id);
   }, [week, range, load]);
   // A saved tab that no longer exists (tabs were renamed) falls back to All
-  useEffect(() => { if (data && group !== 'All' && !data.teams.some(t => (t.group === 'Resizing' ? 'Resizing' : t.name) === group)) setGroup('All'); }, [data, group]);
+  useEffect(() => { if (data && group !== 'All' && !data.teams.some(t => t.group === group)) setGroup('All'); }, [data, group]);
   const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capGroup', g); } catch { /* ignore */ } };
 
   // Tabs: All, Resizing (Resizing + Rips boards), then every other team on its own tab
