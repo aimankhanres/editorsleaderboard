@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { agencyAccessCheck, editorTasksPage, RateLimited } from '@/lib/clickup';
+import { agencyAccessCheck, agencyToken, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
 import * as store from '@/lib/store';
 import { q } from '@/lib/db';
 
@@ -12,6 +12,7 @@ const BUDGET_MS = 240_000;
 
 /** Paging state kept in kv: pages of "updated after `since`" tasks, oldest first. */
 type State = { since: number; page: number; maxSeen: number };
+const KV: Record<MirrorStream, string> = { editor: 'tasks_sync', pipeline: 'tasks_sync_pipeline', agency: 'tasks_sync_agency' };
 
 /**
  * Keeps cu_tasks (every ClickUp task with an Editor) in sync, incrementally: each run pages through tasks updated
@@ -51,25 +52,37 @@ export async function GET(req: Request) {
   }
 
   await store.ensureTaskTables();
-  let state = (await store.kvGet<State>('tasks_sync')) ?? { since: 0, page: 0, maxSeen: 0 };
-  let pages = 0, saved = 0, passes = 0, rateLimited = false;
-  try {
-    while (Date.now() - started < BUDGET_MS) {
-      const { tasks, lastPage } = await editorTasksPage(state.since, state.page);
-      const withEditor = tasks.filter(t => t.editors.length);
-      await store.upsertCuTasks(withEditor);
-      saved += withEditor.length; pages++;
-      const maxSeen = Math.max(state.maxSeen, ...tasks.map(t => t.updated ?? 0));
-      // End of this pass: next pass asks for anything updated after the newest update we saw (minus 1s slack)
-      state = lastPage ? { since: Math.max(state.since, maxSeen - 1000), page: 0, maxSeen } : { ...state, page: state.page + 1, maxSeen };
-      await store.kvSet('tasks_sync', state);
-      if (lastPage) { passes++; break; }
+  // ?reset=editor|pipeline|agency : start that stream over from the beginning (e.g. after adding mirrored fields)
+  const reset = url.searchParams.get('reset');
+  if (reset) await store.kvSet(KV[reset as MirrorStream] ?? 'x', { since: 0, page: 0, maxSeen: 0 });
+
+  // Streams in priority order; each pages until caught up, then the next one gets the rest of the time budget.
+  const streams: MirrorStream[] = ['editor', 'pipeline', ...(agencyToken() ? ['agency' as const] : [])];
+  const report: Record<string, { pages: number; saved: number; caughtUp: boolean; since: string | null }> = {};
+  let rateLimited = false;
+  for (const stream of streams) {
+    let state = (await store.kvGet<State>(KV[stream])) ?? { since: 0, page: 0, maxSeen: 0 };
+    const r = { pages: 0, saved: 0, caughtUp: false, since: null as string | null };
+    report[stream] = r;
+    try {
+      while (Date.now() - started < BUDGET_MS) {
+        const { tasks, lastPage } = await streamTasksPage(stream, state.since, state.page);
+        const keep = stream === 'editor' ? tasks.filter(t => t.editors.length) : tasks;
+        await store.upsertCuTasks(keep);
+        r.saved += keep.length; r.pages++;
+        const maxSeen = Math.max(state.maxSeen, ...tasks.map(t => t.updated ?? 0));
+        // End of this pass: next pass asks for anything updated after the newest update we saw (minus 1s slack)
+        state = lastPage ? { since: Math.max(state.since, maxSeen - 1000), page: 0, maxSeen } : { ...state, page: state.page + 1, maxSeen };
+        await store.kvSet(KV[stream], state);
+        if (lastPage) { r.caughtUp = true; break; }
+      }
+    } catch (e) {
+      if (e instanceof RateLimited) { rateLimited = true; continue; }
+      return NextResponse.json({ ok: false, stream, error: e instanceof Error ? e.message : String(e), report }, { status: 500 });
     }
-  } catch (e) {
-    if (e instanceof RateLimited) rateLimited = true;
-    else return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e), pages, saved }, { status: 500 });
+    r.since = state.since ? new Date(state.since).toISOString() : null;
+    if (Date.now() - started >= BUDGET_MS) break;
   }
-  return NextResponse.json({
-    ok: true, pages, saved, caughtUp: passes > 0, rateLimited, state, ...(await store.cuTaskStats()), ms: Date.now() - started,
-  });
+  const caughtUp = streams.every(s => report[s]?.caughtUp);
+  return NextResponse.json({ ok: true, caughtUp, rateLimited, report, ...(await store.cuTaskStats()), ms: Date.now() - started });
 }

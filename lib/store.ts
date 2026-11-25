@@ -323,6 +323,18 @@ const TASK_DDL = [
   `CREATE INDEX IF NOT EXISTS cu_tasks_done_idx ON cu_tasks (edit_done)`,
   `CREATE INDEX IF NOT EXISTS cu_tasks_hash_idx ON cu_tasks ((substring(name from '^#([0-9]+)')))`,
   `CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS workspace text NOT NULL DEFAULT 'resilia'`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS strategists jsonb NOT NULL DEFAULT '[]'`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS strategist_ids bigint[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS senior_ids bigint[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS sizes text[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS format text`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS product text`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS team text`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS frame_url text`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS mirrored_at timestamptz`,
+  `CREATE INDEX IF NOT EXISTS cu_tasks_strat_idx ON cu_tasks USING gin (strategist_ids)`,
+  `CREATE INDEX IF NOT EXISTS cu_tasks_list_idx ON cu_tasks (list_id)`,
 ];
 export async function ensureTaskTables(): Promise<void> {
   if (tasksSchemaReady) return;
@@ -345,25 +357,36 @@ const ts = (n: number | null) => (n ? new Date(n).toISOString() : null);
 export async function upsertCuTasks(tasks: MirrorRow[]): Promise<void> {
   for (const part of chunks(tasks)) {
     const payload = part.map(t => ({
-      task_id: t.taskId, name: t.name, url: t.url, list_id: t.listId, list_name: t.listName, status: t.status,
-      status_type: t.statusType, editors: t.editors, editor_ids: t.editors.map(e => e.id), brief_id: t.briefId,
-      edit_done: ts(t.editDone), delivered: ts(t.delivered), assigned: ts(t.assigned),
+      task_id: t.taskId, workspace: t.workspace, name: t.name, url: t.url, list_id: t.listId, list_name: t.listName,
+      status: t.status, status_type: t.statusType, editors: t.editors, editor_ids: t.editors.map(e => e.id),
+      strategists: t.strategists, strategist_ids: t.strategists.map(e => e.id), senior_ids: t.seniors.map(e => e.id),
+      brief_id: t.briefId, edit_done: ts(t.editDone), delivered: ts(t.delivered), assigned: ts(t.assigned),
       created_at: ts(t.created), updated_at: ts(t.updated), closed_at: ts(t.closed),
+      sizes: t.sizes, format: t.format, product: t.product, team: t.team, frame_url: t.frameUrl,
     }));
     await q(
-      `INSERT INTO cu_tasks (task_id, name, url, list_id, list_name, status, status_type, editors, editor_ids, brief_id,
-                             edit_done, delivered, assigned, created_at, updated_at, closed_at)
-       SELECT task_id, name, url, list_id, list_name, status, status_type, editors,
-              ARRAY(SELECT jsonb_array_elements_text(editor_ids)::bigint), brief_id,
-              edit_done, delivered, assigned, created_at, updated_at, closed_at
-         FROM jsonb_to_recordset($1::jsonb) AS x(task_id text, name text, url text, list_id text, list_name text,
-              status text, status_type text, editors jsonb, editor_ids jsonb, brief_id text, edit_done timestamptz,
-              delivered timestamptz, assigned timestamptz, created_at timestamptz, updated_at timestamptz, closed_at timestamptz)
-       ON CONFLICT (task_id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, list_id = EXCLUDED.list_id,
-         list_name = EXCLUDED.list_name, status = EXCLUDED.status, status_type = EXCLUDED.status_type,
-         editors = EXCLUDED.editors, editor_ids = EXCLUDED.editor_ids, brief_id = EXCLUDED.brief_id,
-         edit_done = EXCLUDED.edit_done, delivered = EXCLUDED.delivered, assigned = EXCLUDED.assigned,
-         created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at`,
+      `INSERT INTO cu_tasks (task_id, workspace, name, url, list_id, list_name, status, status_type, editors, editor_ids,
+                             strategists, strategist_ids, senior_ids, brief_id, edit_done, delivered, assigned,
+                             created_at, updated_at, closed_at, sizes, format, product, team, frame_url, mirrored_at)
+       SELECT task_id, workspace, name, url, list_id, list_name, status, status_type, editors,
+              ARRAY(SELECT jsonb_array_elements_text(editor_ids)::bigint), strategists,
+              ARRAY(SELECT jsonb_array_elements_text(strategist_ids)::bigint),
+              ARRAY(SELECT jsonb_array_elements_text(senior_ids)::bigint), brief_id,
+              edit_done, delivered, assigned, created_at, updated_at, closed_at,
+              ARRAY(SELECT jsonb_array_elements_text(sizes)), format, product, team, frame_url, now()
+         FROM jsonb_to_recordset($1::jsonb) AS x(task_id text, workspace text, name text, url text, list_id text,
+              list_name text, status text, status_type text, editors jsonb, editor_ids jsonb, strategists jsonb,
+              strategist_ids jsonb, senior_ids jsonb, brief_id text, edit_done timestamptz, delivered timestamptz,
+              assigned timestamptz, created_at timestamptz, updated_at timestamptz, closed_at timestamptz,
+              sizes jsonb, format text, product text, team text, frame_url text)
+       ON CONFLICT (task_id) DO UPDATE SET workspace = EXCLUDED.workspace, name = EXCLUDED.name, url = EXCLUDED.url,
+         list_id = EXCLUDED.list_id, list_name = EXCLUDED.list_name, status = EXCLUDED.status,
+         status_type = EXCLUDED.status_type, editors = EXCLUDED.editors, editor_ids = EXCLUDED.editor_ids,
+         strategists = EXCLUDED.strategists, strategist_ids = EXCLUDED.strategist_ids, senior_ids = EXCLUDED.senior_ids,
+         brief_id = EXCLUDED.brief_id, edit_done = EXCLUDED.edit_done, delivered = EXCLUDED.delivered,
+         assigned = EXCLUDED.assigned, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
+         closed_at = EXCLUDED.closed_at, sizes = EXCLUDED.sizes, format = EXCLUDED.format, product = EXCLUDED.product,
+         team = EXCLUDED.team, frame_url = EXCLUDED.frame_url, mirrored_at = now()`,
       [JSON.stringify(payload)],
     );
   }
@@ -393,7 +416,7 @@ export async function resolveInternalBriefs(keys: string[]): Promise<BriefInfo[]
         WHERE name ~* ('^([0-9]{1,2}x[0-9]{1,2}[_ -]*)?#0*' || $1 || '([^0-9]|$)')
           AND ($2::int IS NULL OR name ~* ('^([0-9]{1,2}x[0-9]{1,2}[_ -]*)?#0*' || $1 || '[_ -]*W ?0*' || $2::text || '([^0-9]|$)'))
           AND ($3::text IS NULL OR name ~* ('pn[^A-Za-z0-9]*' || $3 || '([^A-Za-z]|$)') OR brief_id ILIKE ($3 || '-%'))
-          AND jsonb_array_length(editors) > 0
+          AND jsonb_array_length(editors) > 0 AND workspace = 'resilia'
         ORDER BY (list_name ILIKE '%cross launch%'), created_at NULLS LAST
         LIMIT 1`,
       [String(k.num), k.week, k.product],

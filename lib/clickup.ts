@@ -265,18 +265,39 @@ export async function briefsEditedBy(userId: number): Promise<{ tasks: number; b
   return { tasks, briefs };
 }
 
-// ------------------------------------------------------------------ task mirror (capacity + #N matching)
+// ------------------------------------------------------------------ task mirror (capacity, briefs, #N matching)
 
-/** Date fields read from every task (ms since epoch, as strings in the API) */
+/** Date fields read from every Resilia task (ms since epoch, as strings in the API) */
 const F_EDIT_COMPLETE = 'e022405a-973d-41c9-bd6d-af5bfed99d68'; // "Edit Complete Date": editor finished
 const F_DELIVERED = '8319778d-0b8e-4406-8db2-79075b773b85'; // "Asset Delivered Date"
 const F_ASSIGNED = '0a93bbd8-98df-4ed6-90ce-7c9cb995b42d'; // "Editor Assigned Date"
 
+export type Workspace = 'resilia' | 'agency';
+export const AGENCY_TEAM_ID = process.env.CLICKUP_AGENCY_TEAM_ID?.trim() || '90141507124';
+export const agencyToken = () => process.env.CLICKUP_AGENCY_TOKEN?.trim() ?? '';
+
+/**
+ * Lists in Resilia's workspace that are live pipelines (briefs move through them). They are mirrored in full,
+ * including tasks with no Editor yet, so the Briefs screen can count what is waiting.
+ */
+export const PIPELINE_LISTS = [
+  '901614785376', '901614380046', '901616741550', // Oregano / Garlic / Cinnamon internal pipelines
+  '1300340000000866', '1300340000001523', '1300340000009738', // Variations
+  '901615541251', // Main-Google/YT Iterations Pipeline
+  '1300340000008474', '1300340000008475', '1300340000008385', // Google/YT Variants resizing
+  '1300340000009707', '1300340000009691', '1300340000009709', // Variation & Resizing space
+];
+
+export type UserRef = { id: number; name: string };
 export type MirroredTask = {
+  workspace: Workspace;
   taskId: string; name: string; url: string; listId: string | null; listName: string | null;
-  status: string | null; statusType: string | null; editors: { id: number; name: string }[];
+  status: string | null; statusType: string | null; editors: UserRef[];
+  strategists: UserRef[]; seniors: UserRef[];
   briefId: string | null; editDone: number | null; delivered: number | null; assigned: number | null;
   created: number | null; updated: number | null; closed: number | null;
+  /** "Size" labels (Static 4x5, Vertical 9x16 …), "Video Format/Style", "Product (SKU)", agency "Team", Frame link */
+  sizes: string[]; format: string | null; product: string | null; team: string | null; frameUrl: string | null;
 };
 
 type CuTaskFull = CuTask & {
@@ -290,39 +311,83 @@ const ms = (v: unknown): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-function mirror(t: CuTaskFull): MirroredTask {
-  const f = (id: string) => t.custom_fields?.find(c => c.id === id)?.value;
-  const editorField = t.custom_fields?.find(c => c.id === EDITOR_FIELD_ID)?.value;
-  const editors = (Array.isArray(editorField) ? editorField : [])
-    .filter((u): u is { id: number; username?: string; email?: string } => !!u && typeof u === 'object' && 'id' in u)
-    .map(u => ({ id: Number(u.id), name: u.username || u.email || `User ${u.id}` }));
-  const brief = f(cfg.cu.briefFieldId);
+const users = (v: unknown): UserRef[] => (Array.isArray(v) ? v : [])
+  .filter((u): u is { id: number; username?: string; email?: string } => !!u && typeof u === 'object' && 'id' in u)
+  .map(u => ({ id: Number(u.id), name: u.username || u.email || `User ${u.id}` }));
+
+/** Text of a drop_down (value = option orderindex or id) or labels (value = option ids) field */
+function optionNames(f: CuField | undefined): string[] {
+  if (!f || f.value == null || f.value === '') return [];
+  const opts = f.type_config?.options ?? [];
+  const vals = Array.isArray(f.value) ? f.value : [f.value];
+  return vals.map(v => {
+    const o = opts.find(o => o.id === v || String(o.orderindex) === String(v));
+    return (o?.name ?? o?.label ?? (typeof v === 'string' ? v : '')).trim();
+  }).filter(Boolean);
+}
+
+function mirror(t: CuTaskFull, workspace: Workspace): MirroredTask {
+  const byName = (n: string) => t.custom_fields?.find(c => c.name.trim().toLowerCase() === n);
+  const byId = (id: string) => t.custom_fields?.find(c => c.id === id);
+  const res = workspace === 'resilia';
+  const val = (id: string, name: string) => (res ? byId(id) : byName(name))?.value;
+  const brief = val(cfg.cu.briefFieldId, 'brief id');
+  const frame = byName('frame io link')?.value;
   return {
+    workspace,
     taskId: t.id, name: t.name, url: t.url || `https://app.clickup.com/t/${t.id}`,
     listId: t.list?.id ?? null, listName: t.list?.name ?? null,
-    status: t.status?.status ?? null, statusType: t.status?.type ?? null, editors,
+    status: t.status?.status ?? null, statusType: t.status?.type ?? null,
+    editors: users(val(EDITOR_FIELD_ID, 'editor')),
+    strategists: users(byName('strategist')?.value),
+    seniors: users((byName('sr editor') ?? byName('senior editor'))?.value),
     briefId: typeof brief === 'string' && brief.trim() ? brief.trim() : null,
-    editDone: ms(f(F_EDIT_COMPLETE)), delivered: ms(f(F_DELIVERED)), assigned: ms(f(F_ASSIGNED)),
+    editDone: ms(val(F_EDIT_COMPLETE, 'edit complete date')), delivered: ms(val(F_DELIVERED, 'asset delivered date')),
+    assigned: ms(val(F_ASSIGNED, 'editor assigned date')),
     created: ms(t.date_created), updated: ms(t.date_updated), closed: ms(t.date_done ?? t.date_closed),
+    sizes: optionNames(byName('size')),
+    format: optionNames(byName('video format/style'))[0] ?? null,
+    product: optionNames(byName('product (sku)'))[0] ?? null,
+    team: optionNames(byName('team'))[0] ?? null,
+    frameUrl: typeof frame === 'string' && frame.trim() ? frame.trim() : null,
   };
 }
 
+/** The mirror streams: every Resilia task with an Editor; every task in the live pipelines; the agency workspace. */
+export type MirrorStream = 'editor' | 'pipeline' | 'agency';
+
+let lastAgencyCall = 0;
+async function agencyFetch(path: string): Promise<Response> {
+  const wait = lastAgencyCall + MIN_GAP_MS - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastAgencyCall = Date.now();
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: agencyToken() }, cache: 'no-store' });
+  if (res.status === 429) throw new RateLimited('ClickUp rate limit (429, agency token)');
+  return res;
+}
+
 /**
- * One page (100) of workspace tasks that have someone in the Editor field and were updated after `sinceMs`,
- * oldest update first, so tasks edited while we page move to the end instead of being skipped.
+ * One page (100) of a stream's tasks updated after `sinceMs`, oldest update first, so tasks edited while we page
+ * move to the end instead of being skipped.
  */
-export async function editorTasksPage(sinceMs: number, page: number, opts: { reverse?: boolean } = {}) {
-  const filter = JSON.stringify([{ field_id: EDITOR_FIELD_ID, operator: 'IS NOT NULL' }]);
+export async function streamTasksPage(stream: MirrorStream, sinceMs: number, page: number, opts: { reverse?: boolean } = {}) {
   const params = new URLSearchParams({
     include_closed: 'true', subtasks: 'true', order_by: 'updated', reverse: String(opts.reverse ?? true),
-    date_updated_gt: String(sinceMs), page: String(page), custom_fields: filter,
+    date_updated_gt: String(sinceMs), page: String(page),
   });
-  const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
-  if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (stream === 'editor') params.set('custom_fields', JSON.stringify([{ field_id: EDITOR_FIELD_ID, operator: 'IS NOT NULL' }]));
+  if (stream === 'pipeline') for (const l of PIPELINE_LISTS) params.append('list_ids[]', l);
+  const res = stream === 'agency'
+    ? await agencyFetch(`/team/${AGENCY_TEAM_ID}/task?${params}`)
+    : await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
+  if (!res.ok) throw new Error(`ClickUp ${stream} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
-  const tasks = (body.tasks ?? []).map(mirror);
+  const tasks = (body.tasks ?? []).map(t => mirror(t, stream === 'agency' ? 'agency' : 'resilia'));
   return { tasks, lastPage: body.last_page !== false || tasks.length === 0 };
 }
+
+/** Back-compat: the editor stream */
+export const editorTasksPage = (sinceMs: number, page: number, opts: { reverse?: boolean } = {}) => streamTasksPage('editor', sinceMs, page, opts);
 
 // ------------------------------------------------------------------ agency workspace (read-only check)
 
