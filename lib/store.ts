@@ -514,7 +514,12 @@ export async function frameStats() {
   const samples = await q<{ kind: string; frame_url: string; error: string | null }>(
     `(SELECT kind, frame_url, error FROM frame_media WHERE kind = 'error' ORDER BY checked_at DESC LIMIT 6)
      UNION ALL (SELECT kind, frame_url, error FROM frame_media WHERE kind = 'share' ORDER BY checked_at DESC LIMIT 3)`);
-  return { byKind: r, remaining: left[0]?.n ?? 0, samples };
+  const byMonth = await q<{ month: string; n: number }>(`SELECT to_char(max(COALESCE(t.edit_done, t.delivered)), 'YYYY-MM') AS month, 1 AS n
+     FROM cu_tasks t LEFT JOIN frame_media f ON f.frame_url = t.frame_url
+     WHERE t.frame_url ~* '^https?://' AND COALESCE(t.edit_done, t.delivered) IS NOT NULL AND f.frame_url IS NULL GROUP BY t.frame_url`);
+  const remainingByMonth: Record<string, number> = {};
+  for (const m of byMonth) remainingByMonth[m.month] = (remainingByMonth[m.month] ?? 0) + 1;
+  return { byKind: r, remaining: left[0]?.n ?? 0, remainingByMonth, samples };
 }
 
 export async function resetFrameMedia(): Promise<void> {
