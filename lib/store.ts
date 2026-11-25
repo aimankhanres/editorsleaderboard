@@ -491,5 +491,8 @@ export async function frameStats() {
   const r = await q<{ kind: string; n: number; minutes: number }>(`SELECT kind, COUNT(*)::int n, COALESCE(round(sum(seconds) / 60), 0)::int minutes FROM frame_media GROUP BY 1`);
   const left = await q<{ n: number }>(`SELECT COUNT(DISTINCT t.frame_url)::int n FROM cu_tasks t LEFT JOIN frame_media f ON f.frame_url = t.frame_url
      WHERE t.frame_url ~* '^https?://' AND COALESCE(t.edit_done, t.delivered) IS NOT NULL AND f.frame_url IS NULL`);
-  return { byKind: r, remaining: left[0]?.n ?? 0 };
+  const samples = await q<{ kind: string; frame_url: string; error: string | null }>(
+    `(SELECT kind, frame_url, error FROM frame_media WHERE kind = 'error' ORDER BY checked_at DESC LIMIT 6)
+     UNION ALL (SELECT kind, frame_url, error FROM frame_media WHERE kind = 'share' ORDER BY checked_at DESC LIMIT 3)`);
+  return { byKind: r, remaining: left[0]?.n ?? 0, samples };
 }
