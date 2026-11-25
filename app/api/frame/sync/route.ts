@@ -16,6 +16,8 @@ export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!(await connected())) return NextResponse.json({ ok: true, skipped: 'Frame.io not connected' });
   const started = Date.now();
+  // ?reset=1 : forget every stored length and look them all up again (after a change to how links are counted)
+  if (new URL(req.url).searchParams.get('reset')) await store.resetFrameMedia();
   const links = await store.frameLinksToCheck(400);
   let done = 0, failed = 0;
   for (const url of links) {

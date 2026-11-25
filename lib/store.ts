@@ -498,3 +498,8 @@ export async function frameStats() {
      UNION ALL (SELECT kind, frame_url, error FROM frame_media WHERE kind = 'share' ORDER BY checked_at DESC LIMIT 3)`);
   return { byKind: r, remaining: left[0]?.n ?? 0, samples };
 }
+
+export async function resetFrameMedia(): Promise<void> {
+  await ensureTaskTables();
+  await q(`TRUNCATE frame_media`);
+}

@@ -118,49 +118,38 @@ async function fileSeconds(acc: string, e: FrameEntity): Promise<{ seconds: numb
   return { id, seconds: typeof dur === 'number' && dur > 0 && (!mt || mt.startsWith('video')) ? dur : null, mediaType: mt, name: d?.name ?? null };
 }
 
-/** Add up every video in a list of Frame entries (files, version stacks, and one level of sub-folders) */
-async function sumEntries(acc: string, entries: FrameEntity[], depth = 0): Promise<{ seconds: number; files: number }> {
-  let seconds = 0, files = 0;
-  for (const e of entries.slice(0, 25)) {
-    if (e.type === 'folder') {
-      if (depth > 0) continue;
-      const c = await slowGet<{ data?: FrameEntity[] }>(`/accounts/${acc}/folders/${e.id}/children`);
-      const sub = await sumEntries(acc, c.body?.data ?? [], depth + 1);
-      seconds += sub.seconds; files += sub.files;
-    } else if (e.type === 'file' || e.type === 'version_stack') {
-      if (e.type === 'file' && e.media_type && !e.media_type.startsWith('video')) continue;
-      const f = await fileSeconds(acc, e);
-      if (f.seconds) { seconds += f.seconds; files++; }
-    }
-  }
-  return { seconds, files };
-}
-
 /**
- * Minutes behind a ClickUp "Frame Io Link": f.io short link -> share URL. A link to one asset counts that video (a
- * version stack counts its latest version); a link to a folder or a whole share counts every video in it (V1/V2/V3
- * variants are separate edits). Durations come from Frame's metadata "Duration" (seconds).
+ * Length of exactly what a ClickUp "Frame Io Link" points to: f.io short link -> share URL -> that one asset (a version
+ * stack counts its latest version), from Frame's metadata "Duration" (seconds). A share link counts only when the share
+ * holds a single asset. Links to folders or multi-asset shares have no single length, so they count no minutes.
  */
 export async function durationOf(link: string): Promise<Duration> {
   const to = await resolveLink(link);
   const share = to.match(new RegExp(`/share/(${UUID})(?:/(?:view/)?(${UUID}))?`, 'i'));
   const direct = to.match(new RegExp(`/(?:view|player)/(${UUID})`, 'i'));
   const acc = await accountId();
-  const itemId = share?.[2] ?? direct?.[1] ?? null;
-  const done = (sum: { seconds: number; files: number }, fileId: string | null, kind: Duration['kind'] = 'video'): Duration =>
-    sum.seconds ? { kind, fileId, seconds: sum.seconds, mediaType: 'video', name: `${sum.files} video${sum.files === 1 ? '' : 's'}` }
-      : { kind: 'other', fileId, seconds: null, mediaType: null, name: 'no video found' };
+  let itemId = share?.[2] ?? direct?.[1] ?? null;
+  const none = (kind: Duration['kind'], name: string, fileId: string | null = itemId): Duration => ({ kind, fileId, seconds: null, mediaType: null, name });
+  let entity: FrameEntity | null = null;
   if (!itemId) {
-    if (!share) return { kind: 'unresolved', fileId: null, seconds: null, mediaType: null, name: null };
+    if (!share) return none('unresolved', 'not a Frame share link');
     const a = await slowGet<{ data?: FrameEntity[] }>(`/accounts/${acc}/shares/${share[1]}/assets`);
-    if (a.status !== 200) return { kind: 'error', fileId: null, seconds: null, mediaType: null, name: null, error: `share assets ${a.status}` };
-    return done(await sumEntries(acc, a.body.data ?? []), share[1]);
+    if (a.status !== 200) return { ...none('error', ''), error: `share assets ${a.status}` };
+    const items = a.body.data ?? [];
+    if (items.length !== 1 || items[0].type === 'folder') return none('share', `share with ${items.length} items`, share[1]);
+    entity = items[0];
+    itemId = entity.id;
+  } else {
+    const vs = await slowGet<{ data?: FrameEntity }>(`/accounts/${acc}/version_stacks/${itemId}`);
+    if (vs.status === 200 && vs.body.data) entity = { ...vs.body.data, type: 'version_stack' };
+    else {
+      const f = await slowGet<{ data?: FrameEntity }>(`/accounts/${acc}/files/${itemId}`);
+      if (f.status === 200 && f.body.data) entity = { ...f.body.data, type: 'file' };
+      else if (f.status === 422) return none('share', 'link is a folder');
+      else return { ...none('error', ''), error: `item ${f.status}` };
+    }
   }
-  const vs = await slowGet<{ data?: FrameEntity }>(`/accounts/${acc}/version_stacks/${itemId}`);
-  if (vs.status === 200 && vs.body.data) return done(await sumEntries(acc, [{ ...vs.body.data, type: 'version_stack' }]), itemId);
-  const f = await slowGet<{ data?: FrameEntity }>(`/accounts/${acc}/files/${itemId}?include=metadata`);
-  if (f.status === 200 && f.body.data) return done(await sumEntries(acc, [{ ...f.body.data, type: 'file' }]), itemId);
-  const c = await slowGet<{ data?: FrameEntity[] }>(`/accounts/${acc}/folders/${itemId}/children`);
-  if (c.status === 200) return done(await sumEntries(acc, c.body.data ?? [], 1), itemId);
-  return { kind: 'error', fileId: itemId, seconds: null, mediaType: null, name: null, error: `item ${f.status}/${c.status}` };
+  const f = await fileSeconds(acc, entity);
+  if (!f.seconds) return { kind: f.mediaType?.startsWith('image') ? 'image' : 'other', fileId: f.id, seconds: null, mediaType: f.mediaType, name: f.name };
+  return { kind: 'video', fileId: f.id, seconds: f.seconds, mediaType: f.mediaType, name: f.name };
 }
