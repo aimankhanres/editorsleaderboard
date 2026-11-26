@@ -40,7 +40,7 @@ export default function Strategists() {
         <div>
           <div className="crumb">Attribution</div>
           <h1>Strategists</h1>
-          <p className="sub">The <strong>pod in the ad name</strong> decides the strategist (shared pods split evenly); ads with no pod fall back to the ClickUp <strong>Strategist</strong> field</p>
+          <p className="sub">The <strong>pod in the ad name</strong> decides the strategist (a shared pod is one joint row); ads with no pod fall back to the ClickUp <strong>Strategist</strong> field</p>
         </div>
       </header>
       <PeriodBar value={period} months={data?.months ?? [period.month]} onChange={setPeriod} min={data?.dataFrom} max={data?.dataTo} />
@@ -77,7 +77,7 @@ export default function Strategists() {
             <div className="banner soft">Pods in ad names that aren&apos;t in the pod list (credited through ClickUp instead): {data.unknownPods.slice(0, 8).map(u => `Pod ${u.pod} (${money(u.spend)})`).join(', ')}</div>
           )}
           <p className="cap-foot">
-            A pod in the ad name wins (Pod10 = David + Farwa splits 50/50). Ads with no pod use the ClickUp Strategist field (for agency briefs, the
+            A pod in the ad name wins; a shared pod (Pod26 = Liran / Farwa) is its own row with the pod&apos;s full total. Ads with no pod use the ClickUp Strategist field (for agency briefs, the
             original agency task&apos;s). Every ad counts, with or without a brief ID or an editor. Winner = an ad with {money(data.winnerSpend)}+ spend in the period.
           </p>
         </>

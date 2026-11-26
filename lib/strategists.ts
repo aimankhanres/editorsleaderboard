@@ -1,9 +1,9 @@
 /**
  * Strategist attribution (Aiman, Nov 26 2026): the ad name's pod wins.
  *  1. Pod in the ad name ("…_Pod 111_…") -> that pod's strategist(s) (lib/pods.ts) get the ad's full spend; a shared pod
- *     splits it evenly. Works on every ad, with or without a brief ID, whether or not an editor was found.
+ *     is ONE joint row ("Liran Ravid / Farwa Javeed") with the full spend. Works on every ad, with or without a brief ID, whether or not an editor was found.
  *  2. No pod (or an unknown pod / the Auto Bot pod) -> the brief's ClickUp "Strategist" field: for agency (6-digit)
- *     briefs the original agency task's Strategist first, else the Resilia task's. Two strategists split evenly.
+ *     briefs the original agency task's Strategist first, else the Resilia task's. Two strategists = one joint row.
  *  3. Neither -> "No strategist", never dropped.
  * ClickUp Strategist users are matched to pod people by email (workspace members, kv `cu_users`), so one person is
  * one row whichever way their spend arrived. Only email hashes are stored (lib/pods emailHash).
@@ -41,6 +41,11 @@ const PRODUCT: Record<string, string> = { OO: 'Oregano', AOG: 'Garlic', CIN: 'Ci
 
 type Who = { key: string; name: string; group: string; active: boolean };
 const fromPod = (s: Strategist): Who => ({ key: s.key, name: s.name, group: s.group, active: s.active });
+/** Two or more people credited together (a shared pod, or two Strategists on a task): ONE joint row with the full amount */
+const joint = (ws: Who[]): Who => {
+  const u = [...new Map(ws.map(w => [w.key, w])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  return u.length === 1 ? u[0] : { key: u.map(w => w.key).join('+'), name: u.map(w => w.name).join(' / '), group: u[0].group, active: u.every(w => w.active) };
+};
 
 export async function buildStrategists(month: string, view: ChannelView = 'meta', range: { from: string; to: string } | null = null,
   opts: { agency?: boolean } = {}): Promise<StrategistPayload> {
@@ -62,7 +67,7 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     return p ? fromPod(p) : { key: e.key, name: e.name, group: 'ClickUp only', active: true };
   };
   const podsOf = new Map<string, Set<number>>();
-  for (const [n, ps] of Object.entries(PODS)) for (const p of ps) podsOf.set(p.key, (podsOf.get(p.key) ?? new Set()).add(Number(n)));
+  for (const [n, ps] of Object.entries(PODS)) { const k = joint(ps.map(fromPod)).key; podsOf.set(k, (podsOf.get(k) ?? new Set()).add(Number(n))); }
 
   type Acc = Who & { spend: number; podSpend: number; clickupSpend: number; ads: Set<string>;
     briefs: Map<string, { taskName: string | null; taskUrl: string | null; spend: number }>;
@@ -106,9 +111,9 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     }
     if (people.length) {
       byPod += ad.spend;
-      const each = ad.spend / people.length;
+      const who = joint(people.map(fromPod)); // a shared pod is one joint row with the full spend
       const briefIds = ad.briefIds.length ? ad.briefIds : [null];
-      for (const p of people) for (const id of briefIds) credit(fromPod(p), each / briefIds.length, ad, id, 'pod');
+      for (const id of briefIds) credit(who, ad.spend / briefIds.length, ad, id, 'pod');
       continue;
     }
     // 2. The ClickUp Strategist field, per brief
@@ -119,7 +124,7 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
       const uniq = [...new Map(strats.map(s => [s.key, s])).values()];
       if (!uniq.length) { none.spend += share; none.briefs.add(id); continue; }
       byClickUp += share; credited = true;
-      for (const s of uniq) credit(s, share / uniq.length, ad, id, 'clickup');
+      credit(joint(uniq), share, ad, id, 'clickup'); // two Strategists on a task: one joint row, like a shared pod
     }
     // 3. Nothing
     if (!ad.briefIds.length) none.spend += ad.spend;
