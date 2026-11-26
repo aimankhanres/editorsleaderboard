@@ -16,7 +16,7 @@ export type MissingTask = {
 };
 
 /** Statuses where no editor is expected yet */
-const NOT_YET = '(task created|brief in progress|brief complete|to do|backlog|ideas?\\y|shelved|on hold)';
+const NOT_YET = '(task created|brief in progress|brief complete|to do|backlog|ideas?\\y|shelved|on hold|rejected)';
 
 export async function buildMissing(): Promise<{ tasks: MissingTask[]; month: string }> {
   await ensureTaskTables();
@@ -30,11 +30,15 @@ export async function buildMissing(): Promise<{ tasks: MissingTask[]; month: str
        SELECT b AS brief_id, sum(a.spend / jsonb_array_length(a.brief_ids))::float AS spend,
               sum(a.spend / jsonb_array_length(a.brief_ids)) FILTER (WHERE a.spend_date >= ($3 || '-01')::date)::float AS spend_month
          FROM ad_spend a, jsonb_array_elements_text(a.brief_ids) b GROUP BY 1)
-     SELECT t.task_id, t.name, t.url, t.list_id, t.list_name, t.status, t.status_type, t.brief_id,
+     SELECT t.task_id, t.name, t.url, t.list_id, t.list_name, t.status, t.status_type,
+            COALESCE(upper(substring(t.name from 'r((?:OO|AOG|CIN)-[0-9]{4,})')), t.brief_id) AS brief_id,
             to_char(COALESCE(t.edit_done, t.delivered), 'YYYY-MM-DD') AS finished,
             to_char(t.created_at, 'YYYY-MM-DD') AS created, sp.spend, sp.spend_month
-       FROM cu_tasks t LEFT JOIN sp ON sp.brief_id = upper(t.brief_id)
+       FROM cu_tasks t
+       -- a resize task's ads carry the ORIGINAL brief ("16x9_AOG-28165_rAOG-100721_…"): count that brief's spend
+       LEFT JOIN sp ON sp.brief_id = COALESCE(upper(substring(t.name from 'r((?:OO|AOG|CIN)-[0-9]{4,})')), upper(t.brief_id))
       WHERE t.workspace = 'resilia' AND t.list_id = ANY($1::text[]) AND jsonb_array_length(t.editors) = 0
+        AND COALESCE(t.status, '') !~* 'rejected'
         AND (COALESCE(sp.spend, 0) > 0 OR t.edit_done IS NOT NULL OR t.delivered IS NOT NULL
              OR (COALESCE(t.status, '') !~* $2 AND COALESCE(t.status_type, '') NOT IN ('open', 'unstarted')))`,
     [PIPELINE_LISTS, NOT_YET, month]);
