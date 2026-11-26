@@ -400,7 +400,12 @@ const TASK_DDL = [
 ];
 export async function ensureTaskTables(): Promise<void> {
   if (tasksSchemaReady) return;
-  for (const stmt of TASK_DDL) await q(stmt);
+  // The DDL takes table locks (ALTER TABLE), which queue behind a running sync and then block every read. So only run
+  // it when something is actually missing: check for the newest column and table first (a plain catalog read).
+  const have = await q<{ n: number }>(
+    `SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'cu_tasks' AND column_name = 'status_time_at')
+          + (SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('frame_media', 'kv')) AS n`);
+  if (Number(have[0]?.n) < 3) for (const stmt of TASK_DDL) await q(stmt);
   tasksSchemaReady = true;
 }
 
