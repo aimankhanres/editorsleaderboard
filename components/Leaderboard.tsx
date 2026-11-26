@@ -217,7 +217,8 @@ function TeamView({ team, total, label, custom, combined, winnerSpend }: {
     <>
       <section className="stats">
         <Stat label={combined ? `${team.name}: spend` : `${team.name} team spend`} value={money(team.spend)}
-          sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ad spend` : undefined} />
+          sub={!total ? undefined : team.spend > total ? 'more than total ad spend: a resized agency brief counts for both its editors'
+            : `${((team.spend / total) * 100).toFixed(1)}% of all ad spend`} />
         <Stat label={`Winner ads (${threshold}+)`} value={String(team.winners)} highlight
           sub={team.winners ? `from ${editorsWithWinners} editor${editorsWithWinners === 1 ? '' : 's'}` : `none ${when} yet`} />
         <Stat label="Editors with spend" value={`${withSpend.length} of ${team.editors.length}`}
