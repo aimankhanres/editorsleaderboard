@@ -96,7 +96,7 @@ export type LeaderboardPayload = {
   editors: EditorRow[];
   teams: TeamBoard[];
   /** Spend credited to roster editors per scope, each dollar once (All / Internal / Agency totals) */
-  scopeSpend?: { all: number; internal: number; agency: number };
+  scopeSpend?: Record<string, number>;
   review: ReviewItem[];
   lastSync: { at: string; ok: boolean; error?: string | null } | null;
   splitMode: 'split' | 'joint';

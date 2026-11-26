@@ -431,6 +431,49 @@ button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed {
 .cap-scope { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 4px; }
 .cap-team-chips { margin: 8px 0 16px; }
 
+/* Date range picker */
+.drp { position: relative; display: inline-block; }
+.drp-bar { display: inline-flex; align-items: stretch; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.drp-step { width: 38px; font-size: 18px; color: var(--text-2); }
+.drp-step:hover:not(:disabled) { background: var(--soft); color: var(--accent); }
+.drp-step:disabled { opacity: .35; cursor: not-allowed; }
+.drp-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-size: 14.5px; color: var(--text); }
+.drp-btn:hover, .drp-btn.on { background: var(--soft); }
+.drp-btn svg { color: var(--muted); }
+.drp-name { font-weight: 700; color: var(--accent); }
+.drp-name + .drp-dates::before { content: '·'; margin-right: 8px; color: var(--faint); }
+.drp-dates { font-weight: 650; white-space: nowrap; }
+.drp-caret { color: var(--faint); font-size: 11px; }
+.drp-pop { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; display: flex; padding: 0; overflow: hidden; }
+.drp-presets { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--line); background: var(--soft); min-width: 150px; }
+.drp-presets button { text-align: left; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.drp-presets button:hover { background: var(--card); }
+.drp-presets button.on { background: var(--accent); color: #fff; }
+.drp-cal { position: relative; padding: 12px 14px 12px; }
+.drp-nav { position: absolute; left: 10px; right: 10px; top: 10px; display: flex; justify-content: space-between; pointer-events: none; }
+.drp-nav button { pointer-events: auto; width: 30px; height: 30px; border-radius: 8px; font-size: 17px; color: var(--text-2); }
+.drp-nav button:hover { background: var(--soft); color: var(--accent); }
+.drp-months { display: flex; gap: 22px; }
+.drp-month { width: 252px; }
+.drp-mname { text-align: center; font-weight: 700; font-size: 14px; height: 30px; line-height: 30px; margin-bottom: 4px; }
+.drp-grid { display: grid; grid-template-columns: repeat(7, 36px); row-gap: 2px; }
+.drp-w { text-align: center; font-size: 11.5px; font-weight: 650; color: var(--faint); padding: 4px 0; }
+.drp-d { height: 34px; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--text); border-radius: 0; }
+.drp-d:hover:not(:disabled) { background: var(--accent-soft); border-radius: 8px; }
+.drp-d:disabled { color: var(--faint); opacity: .45; cursor: not-allowed; }
+.drp-d.in { background: var(--accent-soft); color: var(--accent); }
+.drp-d.start, .drp-d.end { background: var(--accent); color: #fff; font-weight: 700; }
+.drp-d.start { border-radius: 8px 0 0 8px; } .drp-d.end { border-radius: 0 8px 8px 0; } .drp-d.start.end { border-radius: 8px; }
+.drp-d.today:not(.start):not(.end) { box-shadow: inset 0 0 0 1.5px var(--accent); border-radius: 8px; }
+.drp-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.drp-foot .muted { flex: 1; font-size: 13px; margin: 0; }
+.period-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 18px; }
+@media (max-width: 760px) { .drp-months .drp-month:first-child { display: none; } .drp-pop { flex-direction: column; } .drp-presets { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); } }
+
+.drow.t1 td:first-child { box-shadow: inset 4px 0 0 var(--gold); }
+.drow.t2 td:first-child { box-shadow: inset 4px 0 0 var(--silver); }
+.drow.t3 td:first-child { box-shadow: inset 4px 0 0 var(--bronze); }
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }

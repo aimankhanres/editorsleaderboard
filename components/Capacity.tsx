@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { CapacityMember, CapacityPayload, CapacityTeam, Pace } from '@/lib/capacity';
 import { ago, initials } from '@/lib/format';
+import DateRangePicker, { isMonWeek } from './DateRangePicker';
 
 const POLL_MS = 5 * 60_000;
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -32,8 +33,6 @@ type Range = { from: string; to: string };
 export default function Capacity() {
   const [week, setWeek] = useState<string | null>(null);
   const [range, setRange] = useState<Range | null>(null);
-  const [picking, setPicking] = useState(false);
-  const [draft, setDraft] = useState<Range>({ from: '', to: '' });
   const [showIdle, setShowIdle] = useState(false);
   const [data, setData] = useState<CapacityPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,14 +64,22 @@ export default function Capacity() {
     return () => clearInterval(id);
   }, [week, range, load]);
   // A saved tab that no longer exists (tabs were renamed) falls back to All
-  useEffect(() => { if (data && !['all', 'internal', 'agency'].includes(group) && !data.teams.some(t => t.id === group)) setGroup('all'); }, [data, group]);
+  useEffect(() => { if (data && !['all', 'internal', 'agency'].includes(group) && !data.teams.some(t => t.id === group || `g:${t.group}` === group)) setGroup('all'); }, [data, group]);
   const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capSel', g); } catch { /* ignore */ } };
 
   // All / Internal / Agency, then one button per team in that scope
   const picked = data?.teams.find(t => t.id === group);
-  const scope: Scope = picked ? scopeOf(picked) : (group as Scope);
+  const groupTeams = group.startsWith('g:') ? (data?.teams ?? []).filter(t => `g:${t.group}` === group) : [];
+  const scope: Scope = picked ? scopeOf(picked) : groupTeams.length ? scopeOf(groupTeams[0]) : (['all', 'internal', 'agency'].includes(group) ? group as Scope : 'all');
   const scopeTeams = (data?.teams ?? []).filter(t => scope === 'all' || scopeOf(t) === scope);
-  const inSel = (t: CapacityTeam) => (picked ? t.id === picked.id : scope === 'all' || scopeOf(t) === scope);
+  const inSel = (t: CapacityTeam) => (picked ? t.id === picked.id : groupTeams.length ? `g:${t.group}` === group : scope === 'all' || scopeOf(t) === scope);
+  // Buttons: groups of teams on one page (Internal = Oregano / Garlic / Cin Internal together); Agency lists its teams
+  const chips: { id: string; label: string }[] = scope === 'agency' ? scopeTeams.map(t => ({ id: t.id, label: t.name }))
+    : [...new Set(scopeTeams.map(t => t.group))].map(g => {
+      const ts = scopeTeams.filter(t => t.group === g);
+      if (g === 'Agency') return { id: 'agency', label: 'Agency' };
+      return ts.length === 1 ? { id: ts[0].id, label: ts[0].name } : { id: `g:${g}`, label: g };
+    });
   const q = query.trim().toLowerCase();
   const teams = (data?.teams ?? [])
     .filter(inSel)
@@ -82,18 +89,6 @@ export default function Capacity() {
     : data.mode !== 'week' || (week != null && data.week !== week));
   const isRange = data?.mode === 'range';
   const period = isRange ? 'this period' : 'this week';
-  const shift = (dir: 1 | -1) => {
-    if (!data) return;
-    if (isRange) { const n = spanDays(data.week, data.weekEnd) * dir; setRange({ from: addDays(data.week, n), to: addDays(data.weekEnd, n) }); }
-    else setWeek(addDays(data.week, 7 * dir));
-  };
-  const openPicker = () => { if (data) setDraft({ from: data.week, to: data.weekEnd }); setPicking(p => !p); };
-  const draftDays = draft.from && draft.to ? spanDays(draft.from, draft.to) : 0;
-  const draftOk = draftDays >= 1 && draftDays <= (data?.maxDays ?? 92);
-  const applyRange = (r: Range) => { setRange(r); setPicking(false); };
-  const backToWeek = () => { setRange(null); setWeek(null); setPicking(false); };
-  const preset = (n: number) => { if (data) applyRange({ from: addDays(data.today, -(n - 1)), to: data.today }); };
-  const monthToDate = () => { if (data) applyRange({ from: `${data.today.slice(0, 8)}01`, to: data.today }); };
   // Summary cards follow the selected tab (each person once, like the company totals)
   const c = (() => {
     if (!data || group === 'all') return data?.company;
@@ -141,32 +136,13 @@ export default function Capacity() {
         </div>
       </header>
 
-      <section className="week-nav">
-        <button className="wk-btn" aria-label={isRange ? 'Previous period' : 'Previous week'} onClick={() => shift(-1)}>‹</button>
-        <div className="wk-label">
-          {data ? <><strong>{fmtDay(data.week, data.week.slice(0, 4) !== data.weekEnd.slice(0, 4) ? { month: 'short', day: 'numeric', year: 'numeric' } : undefined)} – {fmtDay(data.weekEnd)}</strong>
-            {isRange ? <span className="wk-tag">{data.days.length} days</span> : data.current ? <span className="wk-tag">This week</span> : null}</> : 'Loading…'}
-        </div>
-        <button className="wk-btn" aria-label={isRange ? 'Next period' : 'Next week'} disabled={!data || data.weekEnd >= data.today} onClick={() => shift(1)}>›</button>
-        <button className={`wk-custom ${picking || isRange ? 'on' : ''}`} onClick={openPicker} aria-expanded={picking}>📅 Custom dates</button>
-        {data && (isRange || !data.current) && <button className="wk-today" onClick={backToWeek}>Back to this week</button>}
-      </section>
-      {picking && data && (
-        <section className="range-pick card">
-          <div className="rp-presets">
-            <button onClick={() => preset(7)}>Last 7 days</button>
-            <button onClick={() => preset(14)}>Last 14 days</button>
-            <button onClick={() => preset(30)}>Last 30 days</button>
-            <button onClick={monthToDate}>This month</button>
-          </div>
-          <form className="rp-form" onSubmit={e => { e.preventDefault(); if (draftOk) applyRange(draft.from <= draft.to ? draft : { from: draft.to, to: draft.from }); }}>
-            <label>From<input type="date" value={draft.from} max={data.today} onChange={e => setDraft(d => ({ ...d, from: e.target.value }))} /></label>
-            <label>To<input type="date" value={draft.to} max={data.today} onChange={e => setDraft(d => ({ ...d, to: e.target.value }))} /></label>
-            <button type="submit" className="rp-apply" disabled={!draftOk}>Apply</button>
-            <span className="muted">{draftDays > data.maxDays ? `Pick up to ${data.maxDays} days` : 'Capacity = daily KPI × workdays in the range'}</span>
-          </form>
-        </section>
-      )}
+      <div className="period-row">
+        {data ? (
+          <DateRangePicker value={{ from: data.week, to: data.weekEnd }}
+            onChange={r => { if (isMonWeek(r)) { setRange(null); setWeek(r.from); } else setRange(r); }} />
+        ) : <span className="muted">Loading…</span>}
+        {data && (isRange || !data.current) && <button className="wk-today" onClick={() => { setRange(null); setWeek(null); }}>Back to this week</button>}
+      </div>
 
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
@@ -180,10 +156,10 @@ export default function Capacity() {
             <input className="search" type="search" placeholder="Search editor" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
           </section>
           <nav className="teams cap-team-chips" role="tablist" aria-label="Team">
-            <button role="tab" aria-selected={!picked} className={!picked ? 'on' : ''} onClick={() => pickGroup(scope)}>
+            <button role="tab" aria-selected={!picked && !groupTeams.length} className={!picked && !groupTeams.length ? 'on' : ''} onClick={() => pickGroup(scope)}>
               {scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams'}
             </button>
-            {scopeTeams.map(t => <button key={t.id} role="tab" aria-selected={picked?.id === t.id} className={picked?.id === t.id ? 'on' : ''} onClick={() => pickGroup(t.id)}>{t.name}</button>)}
+            {chips.map(c => <button key={c.id} role="tab" aria-selected={group === c.id} className={group === c.id ? 'on' : ''} onClick={() => pickGroup(c.id)}>{c.label}</button>)}
           </nav>
 
           <section className="stats">

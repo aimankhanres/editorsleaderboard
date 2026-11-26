@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PipelinePayload, PipelineTeam } from '@/lib/pipeline';
+import DateRangePicker from './DateRangePicker';
 
 // One color per status (by rank in the totals), so a status keeps its color across teams
 const PALETTE = ['#6366f1', '#a855f7', '#f59e0b', '#0ea5e9', '#10b981', '#ef4444', '#ec4899', '#84cc16', '#14b8a6', '#f97316', '#64748b', '#8b5cf6'];
@@ -13,8 +14,6 @@ export default function Briefs() {
   const [data, setData] = useState<PipelinePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ from: '', to: '' });
-  const [picking, setPicking] = useState(false);
   const seq = useRef(0);
   const load = useCallback(async (r: typeof range) => {
     const mine = ++seq.current;
@@ -42,21 +41,10 @@ export default function Briefs() {
           <p className="sub">Briefs in each team&apos;s queue (every status before the final asset is delivered) against what its editors finish in a week</p>
         </div>
       </header>
-      <section className="week-nav">
-        <div className="wk-label">{data ? <><span className="muted-l">Created / delivered in</span><strong>{fmtDay(data.from)} – {fmtDay(data.to)}</strong></> : 'Loading…'}</div>
-        <button className={`wk-custom ${picking || range ? 'on' : ''}`} onClick={() => { if (data) setDraft({ from: data.from, to: data.to }); setPicking(p => !p); }}>📅 Custom dates</button>
-        {range && <button className="wk-today" onClick={() => { setRange(null); setPicking(false); }}>Back to this month</button>}
-      </section>
-      {picking && (
-        <section className="range-pick card">
-          <form className="rp-form" onSubmit={e => { e.preventDefault(); if (draft.from && draft.to && draft.from <= draft.to) { setRange(draft); setPicking(false); } }}>
-            <label>From<input type="date" value={draft.from} onChange={e => setDraft(d => ({ ...d, from: e.target.value }))} /></label>
-            <label>To<input type="date" value={draft.to} onChange={e => setDraft(d => ({ ...d, to: e.target.value }))} /></label>
-            <button type="submit" className="rp-apply" disabled={!draft.from || !draft.to || draft.from > draft.to}>Apply</button>
-            <span className="muted">The queue is always as of now; the dates only change “created” and “delivered”.</span>
-          </form>
-        </section>
-      )}
+      <div className="period-row">
+        {data ? <DateRangePicker value={{ from: data.from, to: data.to }} onChange={r => setRange(r)} /> : <span className="muted">Loading…</span>}
+        <span className="muted">The queue is always as of now; the dates change &quot;created&quot; and &quot;delivered&quot;.</span>
+      </div>
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
       {data && (

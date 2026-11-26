@@ -19,16 +19,18 @@ export type Allocation = {
   /** Dollars credited to at least one roster editor in each scope, each dollar counted ONCE (for "All …" totals) */
   scopeSpend: ScopeSpend;
 };
-export type ScopeSpend = { all: number; internal: number; agency: number };
+/** all / internal / agency, plus one key per team group (Resizing, Iterations, Internal, Variations, Agency) */
+export type ScopeSpend = Record<string, number>;
 
 const TEAM_GROUP = new Map(TEAMS.map(t => [t.id, t.group]));
 /** The scope a credit lands in: the team board it shows on for that person (lib/teams countsOnTeam), or null when the
  * person isn't on any team list */
-function scopeOfCredit(key: string, board: string | null): 'internal' | 'agency' | null {
+function scopeOfCredit(key: string, board: string | null): string[] {
   const teams = TEAMS_OF.get(key);
-  if (!teams?.length) return null;
+  if (!teams?.length) return [];
   const team = board && teams.includes(board) ? board : teams[0];
-  return TEAM_GROUP.get(team) === 'Agency' ? 'agency' : 'internal';
+  const group = TEAM_GROUP.get(team) ?? '';
+  return [group === 'Agency' ? 'agency' : 'internal', group];
 }
 
 const tokens = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter(t => t.length >= 3));
@@ -51,7 +53,7 @@ export function allocate(
   const review: ReviewItem[] = [];
   let total = 0;
   let attributed = 0;
-  const scopeSpend: ScopeSpend = { all: 0, internal: 0, agency: 0 };
+  const scopeSpend: ScopeSpend = { internal: 0, agency: 0 };
 
   // Ad-name cross-check: only the editors on the team lists (lib/teams.ts). First name, plus a nickname
   // written in brackets, e.g. "Lucylen (Lucy) Pagado" matches "Lucylen" and "Lucy".
@@ -105,7 +107,7 @@ export function allocate(
     // which scopes this share of the ad shows up in (each scope counts it once, however many people get it)
     const landed = (eds: EditorRef[], b: BriefInfo, scopes: Set<string>) => {
       const board = boardOf({ listId: b.listId ?? null, workspace: b.workspace, product: b.product, name: b.taskName });
-      for (const e of eds) { const sc = scopeOfCredit(e.key, board); if (sc) scopes.add(sc); }
+      for (const e of eds) for (const sc of scopeOfCredit(e.key, board)) scopes.add(sc);
     };
     const creditedTokens = new Set<string>(); // every name word of the credited editors
 
@@ -114,9 +116,7 @@ export function allocate(
       const base = { adId: ad.adId, adName: ad.adName, spend: share, briefId, taskUrl: info?.taskUrl ?? null };
       const scopes = new Set<string>();
       const countScopes = () => {
-        if (scopes.size) scopeSpend.all += share;
-        if (scopes.has('internal')) scopeSpend.internal += share;
-        if (scopes.has('agency')) scopeSpend.agency += share;
+        for (const sc of scopes) scopeSpend[sc] = (scopeSpend[sc] ?? 0) + share;
       };
       const resizeOk = !!info && info.status === 'ok' && info.editors.length > 0;
       // Agency (6-digit) briefs: the original agency editor is credited too, on the agency board. The resize editor
@@ -195,7 +195,7 @@ export function allocate(
   review.sort((a, b) => b.spend - a.spend);
   return { total: round2(total), attributed: round2(attributed), editors, review: review.map(r => ({ ...r, spend: round2(r.spend) })),
     // All = every credited dollar (people not on a team list too); Internal / Agency = only people on those teams
-    scopeSpend: { all: round2(attributed), internal: round2(scopeSpend.internal), agency: round2(scopeSpend.agency) } };
+    scopeSpend: { ...Object.fromEntries(Object.entries(scopeSpend).map(([k, v]) => [k, round2(v)])), all: round2(attributed) } };
 }
 
 export function rank(editors: Allocation['editors'], prev: Map<string, number>): EditorRow[] {

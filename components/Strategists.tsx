@@ -61,6 +61,8 @@ export default function Strategists() {
             <Stat label="No strategist" value={money(data.noStrategist.spend)} sub={`${data.noStrategist.ads} ads with no pod and no ClickUp Strategist`} warn={data.noStrategist.spend > 0} />
           </section>
 
+          {rows.length > 0 && !q && <Podium rows={rows.slice(0, 3)} winnerSpend={data.winnerSpend} />}
+
           <section className="controls cap-controls">
             <div className="seg" role="tablist" aria-label="Internal or agency">
               {(['all', 'internal', 'agency'] as const).map(k => (
@@ -102,7 +104,7 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
   const winBriefs = new Set(s.winners.map(w => w.briefId)).size;
   return (
     <>
-      <tr className={`drow ${open ? 'open' : ''}`} onClick={onToggle} aria-expanded={open}>
+      <tr className={`drow ${open ? 'open' : ''} ${i < 3 ? `t${i + 1}` : ''}`} onClick={onToggle} aria-expanded={open}>
         <td className={`rank-n r${i + 1}`}>{i + 1}</td>
         <td>
           <div className="who-cell">
@@ -160,5 +162,28 @@ function Stat({ label, value, sub, warn, accent }: { label: string; value: strin
       <div className="stat-value">{value}</div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
+  );
+}
+
+/** Top three strategists, same look as the Editors podium: 2nd · 1st · 3rd */
+function Podium({ rows, winnerSpend }: { rows: StrategistRow[]; winnerSpend: number }) {
+  const order = [rows[1], rows[0], rows[2]].filter(Boolean) as StrategistRow[];
+  const rank = (s: StrategistRow) => rows.indexOf(s) + 1;
+  return (
+    <section className="podium">
+      {order.map(s => (
+        <div key={s.key} className={`step p${rank(s)}`}>
+          <div className="medal">{rank(s)}</div>
+          <span className="avatar strat" style={{ width: rank(s) === 1 ? 68 : 56, height: rank(s) === 1 ? 68 : 56, fontSize: rank(s) === 1 ? 24 : 20 }}>{initials(s.name)}</span>
+          <div className="p-name">{s.name}</div>
+          <div className="p-role">{s.group}{s.pods.length ? ` · Pod ${s.pods.join(', ')}` : ''}</div>
+          <div className="p-spend">{money(s.spend)}</div>
+          <div className="p-meta">
+            {s.winners.length > 0 && <span className="winners" title={`Ads over ${money(winnerSpend)}`}>🏆 {s.winners.length} winner{s.winners.length === 1 ? '' : 's'}</span>}
+            <span>{s.briefs} briefs · {s.ads} ads</span>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

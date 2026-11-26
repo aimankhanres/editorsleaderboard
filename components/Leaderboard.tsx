@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import type { MissingReason, MissingTask } from '@/lib/missing';
-import { ago, initials, money, monthLabel } from '@/lib/format';
+import { ago, initials, money } from '@/lib/format';
 import { type ChannelView } from '@/lib/channels';
+import DateRangePicker, { addDays, isWholeMonth, todayYmd, type DateRange } from './DateRangePicker';
+
+const nextMonthOf = (m: string) => { const [y, mo] = m.split('-').map(Number); return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`; };
 
 const POLL_MS = 60_000;
 
@@ -27,7 +30,9 @@ const inScope = (t: TeamBoard, s: Scope) => s === 'all' || scopeOf(t) === s;
 /** Every team in a scope as one board: each person once, their parts on each team added up */
 function mergeBoards(teams: TeamBoard[], id: string, name: string, dedupedSpend?: number): TeamBoard {
   const by = new Map<string, EditorRow>();
+  const teamsOf = new Map<string, string[]>();
   for (const t of teams) for (const e of t.editors) {
+    if (t.id !== 'unassigned') teamsOf.set(e.key, [...(teamsOf.get(e.key) ?? []), t.name]);
     const p = by.get(e.key);
     if (!p) { by.set(e.key, { ...e, briefs: [...e.briefs], winners: [...e.winners] }); continue; }
     const briefs = new Map(p.briefs.map(b => [b.briefId, { ...b }]));
@@ -37,7 +42,9 @@ function mergeBoards(teams: TeamBoard[], id: string, name: string, dedupedSpend?
       statics: (p.statics ?? 0) + (e.statics ?? 0), minutes: (p.minutes ?? 0) + (e.minutes ?? 0), inClickUp: p.inClickUp || e.inClickUp,
       briefs: [...briefs.values()].sort((a, b) => b.spend - a.spend), winners: [...winners.values()].sort((a, b) => b.spend - a.spend) });
   }
-  const rows = [...by.values()].sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+  // On a combined board, the role line names the person's team(s)
+  const rows = [...by.values()].map(r => (teamsOf.has(r.key) ? { ...r, role: `${(teamsOf.get(r.key) ?? []).join(' + ')}${r.role ? ` · ${r.role}` : ''}`, boards: undefined } : r))
+    .sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
   // People keep their full credit; the board total counts each dollar once (a resized agency brief credits two people)
   const spend = dedupedSpend ?? rows.reduce((a, r) => a + r.spend, 0);
   return { id, name, group: '', spend, winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
@@ -57,7 +64,6 @@ export default function Leaderboard() {
   // Meta + Google together: the dashboard no longer splits by channel (the data pipeline still pulls both)
   const channel: ChannelView = 'all';
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
-  const [customOpen, setCustomOpen] = useState(false);
   const [, tick] = useState(0);
 
   const setView = (v: View) => {
@@ -101,11 +107,13 @@ export default function Leaderboard() {
 
   const teams = data?.teams ?? [];
   const isScope = (v: string | null): v is Scope => v === 'all' || v === 'internal' || v === 'agency';
-  const current: View = view && (view === 'review' || isScope(view) || teams.some(t => t.id === view)) ? view : 'all';
+  const isGroup = (v: string | null) => !!v && v.startsWith('g:') && teams.some(t => `g:${t.group}` === v);
+  const current: View = view && (view === 'review' || isScope(view) || isGroup(view) || teams.some(t => t.id === view)) ? view : 'all';
   // The scope (All / Internal / Agency) follows the team picked; Needs review keeps the last one
   const [lastScope, setLastScope] = useState<Scope>('all');
   const picked = teams.find(t => t.id === current) ?? null;
-  const scope: Scope = isScope(current) ? current : picked ? scopeOf(picked) : lastScope;
+  const groupTeams = isGroup(current) ? teams.filter(t => `g:${t.group}` === current) : [];
+  const scope: Scope = isScope(current) ? current : picked ? scopeOf(picked) : groupTeams.length ? scopeOf(groupTeams[0]) : lastScope;
   useEffect(() => { if (current !== 'review') setLastScope(scope); }, [current, scope]);
   const scopeTeams = teams.filter(t => inScope(t, scope));
   const scopeName = scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams';
@@ -116,14 +124,29 @@ export default function Leaderboard() {
     return data.editors.filter(e => e.spend > 0 && !onBoards.has(e.key)).map(e => ({ ...e, role: 'Not on a team yet', inClickUp: true }));
   }, [data]);
   const unassignedBoard: TeamBoard = { id: 'unassigned', name: 'Not on a team', group: '', spend: 0, winners: 0, editors: unassigned };
-  const team = picked ?? (isScope(current) && data
-    ? mergeBoards(scope === 'all' ? [...scopeTeams, unassignedBoard] : scopeTeams, current, scopeName, data.scopeSpend?.[scope]) : null);
+  const team = picked ?? (!data ? null
+    : groupTeams.length ? mergeBoards(groupTeams, current, `${groupTeams[0].group} teams`, data.scopeSpend?.[groupTeams[0].group ?? ''])
+    : isScope(current) ? mergeBoards(scope === 'all' ? [...scopeTeams, unassignedBoard] : scopeTeams, current, scopeName, data.scopeSpend?.[scope]) : null);
+  // Buttons under All / Internal / Agency: groups of teams (a group with one team opens that team); Agency lists its teams
+  const chips: { id: string; label: string }[] = (() => {
+    if (scope === 'agency') return scopeTeams.map(t => ({ id: t.id, label: t.name }));
+    const groupsIn = [...new Set(scopeTeams.map(t => t.group ?? ''))];
+    return groupsIn.map(g => {
+      const ts = scopeTeams.filter(t => t.group === g);
+      if (g === 'Agency') return { id: 'agency', label: 'Agency' };
+      return ts.length === 1 ? { id: ts[0].id, label: ts[0].name } : { id: `g:${g}`, label: g };
+    });
+  })();
   const reviewCount = data?.review.length ?? 0;
   const label = 'All';
   const stale = data != null && (data.channel !== channel
     || (range ? data.range?.from !== range.from || data.range?.to !== range.to : data.range != null));
-  const period = data?.range ? `${fmtDate(data.range.from)} – ${fmtDate(data.range.to)}` : null;
-  const pickMonth = (m: string) => { setRange(null); setCustomOpen(false); setMonth(m); };
+  // One date control: a whole calendar month asks for that month (rank changes work), anything else is a custom range
+  const shownMonth = data?.month ?? month ?? todayYmd().slice(0, 7);
+  const periodValue: DateRange = range ?? { from: `${shownMonth}-01`, to: addDays(`${nextMonthOf(shownMonth)}-01`, -1) };
+  const pickRange = (r: DateRange) => {
+    if (isWholeMonth(r)) { setRange(null); setMonth(r.from.slice(0, 7)); } else setRange(r);
+  };
 
   return (
     <main className="wrap">
@@ -146,6 +169,11 @@ export default function Leaderboard() {
         </div>
       </header>
 
+      <div className="period-row">
+        <DateRangePicker value={periodValue} onChange={pickRange} min={data?.dataFrom} max={data?.dataTo}
+          presets={['this-week', 'last-week', 'this-month', 'last-month', 'last-7', 'last-14', 'last-30', 'last-90']} />
+        {data?.range && <span className="muted">Rank changes (▲▼) show for whole months only</span>}
+      </div>
       <div className="scope-bar">
         <div className="seg" role="tablist" aria-label="Internal or agency">
           {SCOPES.map(x => (
@@ -162,39 +190,12 @@ export default function Leaderboard() {
           <button role="tab" aria-selected={isScope(current)} className={isScope(current) ? 'on' : ''} onClick={() => setView(scope)}>
             {scopeName} <span className="count">{new Set([...scopeTeams.flatMap(t => t.editors.map(e => e.key)), ...(scope === 'all' ? unassigned.map(e => e.key) : [])]).size}</span>
           </button>
-          {scopeTeams.map(t => (
-            <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
-              {t.name} <span className="count">{t.editors.length}</span>
-            </button>
+          {chips.map(c => (
+            <button key={c.id} role="tab" aria-selected={current === c.id} className={current === c.id ? 'on' : ''} onClick={() => setView(c.id)}>{c.label}</button>
           ))}
         </nav>
       )}
 
-      <section className="controls">
-        <div className="control grow">
-          <span className="control-label">Period</span>
-          <div className="seg" aria-label="Period">
-            {(data?.months ?? []).map(m => (
-              <button key={m} className={!range && m === data?.month ? 'on' : ''} onClick={() => pickMonth(m)}>{monthLabel(m)}</button>
-            ))}
-            <button className={range || customOpen ? 'on' : ''} onClick={() => setCustomOpen(o => !o)} aria-expanded={customOpen}>
-              {range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : 'Custom dates'}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {customOpen && (
-        <RangePicker
-          initial={range ?? data?.range ?? null}
-          min={data?.dataFrom ?? undefined}
-          max={data?.dataTo ?? undefined}
-          onApply={r => { setRange(r); setCustomOpen(false); }}
-          onClear={() => { setRange(null); setCustomOpen(false); }}
-          active={range != null}
-        />
-      )}
-      {period && <div className="period">Showing <strong>{period}</strong> · rank changes are hidden for custom dates</div>}
 
       {error && <div className="banner">Couldn&apos;t refresh: {error}</div>}
       {!data && !error && <div className="empty">Loading…</div>}
@@ -202,7 +203,7 @@ export default function Leaderboard() {
       <div className={stale ? 'loading' : ''}>
         {data && team && (
           <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`}
-            team={team} total={data.total} label={label} custom={data.range != null} combined={isScope(current)} winnerSpend={data.winnerSpend} />
+            team={team} total={data.total} label={label} custom={data.range != null} combined={isScope(current) || isGroup(current)} winnerSpend={data.winnerSpend} />
         )}
         {data && current === 'review' && <ReviewView data={data} label={label} unassigned={unassigned} />}
       </div>
@@ -678,39 +679,4 @@ function MissingEditorsGroup() {
   );
 }
 
-const fmtDate = (ymd: string) =>
-  new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-function RangePicker({ initial, min, max, onApply, onClear, active }: {
-  initial: { from: string; to: string } | null; min?: string; max?: string; active: boolean;
-  onApply: (r: { from: string; to: string }) => void; onClear: () => void;
-}) {
-  const last = max ?? new Date().toISOString().slice(0, 10);
-  const shift = (ymd: string, n: number) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-  const clamp = (ymd: string) => (min && ymd < min ? min : ymd);
-  const [from, setFrom] = useState(initial?.from ?? clamp(shift(last, -6)));
-  const [to, setTo] = useState(initial?.to ?? last);
-  const valid = !!from && !!to && from <= to;
-  const presets: { label: string; from: string; to: string }[] = [
-    { label: 'Today', from: last, to: last },
-    { label: 'Yesterday', from: shift(last, -1), to: shift(last, -1) },
-    { label: 'Last 7 days', from: clamp(shift(last, -6)), to: last },
-    { label: 'Last 14 days', from: clamp(shift(last, -13)), to: last },
-  ];
-  return (
-    <section className="range" aria-label="Custom date range">
-      <div className="range-fields">
-        <label>From<input type="date" value={from} min={min} max={to || max} onChange={e => setFrom(e.target.value)} /></label>
-        <label>To<input type="date" value={to} min={from || min} max={max} onChange={e => setTo(e.target.value)} /></label>
-        <button className="apply" disabled={!valid} onClick={() => valid && onApply({ from, to })}>Apply</button>
-        {active && <button className="ghost" onClick={onClear}>Back to month</button>}
-      </div>
-      <div className="presets">
-        {presets.map(p => (
-          <button key={p.label} onClick={() => { setFrom(p.from); setTo(p.to); onApply({ from: p.from, to: p.to }); }}>{p.label}</button>
-        ))}
-      </div>
-      {min && <p className="hint">Data available from {fmtDate(min)}{max ? ` to ${fmtDate(max)}` : ''}.</p>}
-    </section>
-  );
-}
