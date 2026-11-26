@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { addDays, monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
-import { adTotals, adsOnDay, dailyTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
+import { adTotals, adTotalsDaily, adsOnDay, dailyTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { PODS, podOf } from '@/lib/pods';
 import { CHANNELS } from '@/lib/channels';
 import { q } from '@/lib/db';
@@ -58,13 +58,15 @@ export async function GET(req: Request) {
     const ads = await store.loadMonthAds(m, null);
     const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: cfg.agencyCredit });
     const alloc = allocate(ads, briefs, await store.loadRoster());
-    const dbTotal = await q<{ t: number; n: number }>(`SELECT COALESCE(sum(spend), 0)::float t, COUNT(DISTINCT ad_id)::int n FROM ad_spend WHERE to_char(spend_date, 'YYYY-MM') = $1`, [m]);
+    const dbTotal = await q<{ t: number; n: number; z: number }>(
+      `SELECT COALESCE(sum(s), 0)::float t, COUNT(*)::int n, COUNT(*) FILTER (WHERE s = 0)::int z
+         FROM (SELECT ad_id, sum(spend) s FROM ad_spend WHERE to_char(spend_date, 'YYYY-MM') = $1 GROUP BY ad_id) x`, [m]);
     const review = alloc.review.filter(r => r.kind !== 'name_mismatch');
     const reviewSum = review.reduce((a, r) => a + r.spend, 0);
     const editorsSum = alloc.editors.reduce((a, e) => a + e.spend, 0);
     const r2 = (n: number) => Math.round(n * 100) / 100;
     return NextResponse.json({
-      month: m, ads: ads.length, dbAds: dbTotal[0].n,
+      month: m, ads: ads.length, dbAds: dbTotal[0].n, dbAdsNettingToZero: dbTotal[0].z,
       total: alloc.total, dbTotal: r2(dbTotal[0].t), credited: alloc.attributed, needsReview: r2(reviewSum),
       creditedPlusReview: r2(alloc.attributed + reviewSum), gapTotalVsCreditedPlusReview: r2(alloc.total - alloc.attributed - reviewSum),
       editorsSum: r2(editorsSum), overlap: alloc.overlap, gapEditorsVsCreditedPlusOverlap: r2(editorsSum - alloc.attributed - alloc.overlap),
@@ -110,9 +112,8 @@ export async function GET(req: Request) {
     const tw = new Map<number, { spend: number; ads: number }>();
     let twTotal = 0;
     for (const ch of CHANNELS) {
-      const rows = await adTotals(ch.tw, from, to);
+      const rows = await adTotalsDaily(ch.tw, ch.campaignTypes, from, to);
       for (const r of rows) {
-        if (ch.campaignTypes && !ch.campaignTypes.includes(String(r.campaignType))) continue;
         twTotal += r.spend;
         const pod = podOf(r.adName);
         if (pod == null) continue;

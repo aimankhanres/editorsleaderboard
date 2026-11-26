@@ -222,3 +222,26 @@ ORDER BY ad LIMIT ${PAGE} OFFSET ${offset}`);
   }
   return out;
 }
+
+/** Audit (read-only): spend per ad over [from, to], rounded to the cent per ad per day first (exactly as stored) */
+export async function adTotalsDaily(channel: string, campaignTypes: string[] | null, from: string, to: string) {
+  const out: { adId: string; adName: string; spend: number }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await runQuery<{ ad: string; nm: string | null; t: number | string }>(from, to, `
+SELECT toString(x.aid) AS ad, any(x.nm0) AS nm, sum(round(x.s, 2)) AS t
+FROM (
+  SELECT a.event_date AS dd, a.ad_id AS aid, any(a.ad_name) AS nm0, SUM(a.spend) AS s
+  FROM ads_table a
+  WHERE a.event_date BETWEEN @startDate AND @endDate AND a.channel = ${sqlString(channel)}${campaignTypes ? `
+    AND a.campaign_type IN (${campaignTypes.map(sqlString).join(', ')})` : ''}
+    AND a.ad_id IS NOT NULL AND a.ad_id != ''
+  GROUP BY a.event_date, a.ad_id
+  HAVING SUM(a.spend) != 0
+) x
+GROUP BY x.aid
+ORDER BY ad LIMIT ${PAGE} OFFSET ${offset}`);
+    for (const r of rows) out.push({ adId: String(r.ad), adName: r.nm ?? '', spend: Number(r.t) || 0 });
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
