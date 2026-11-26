@@ -110,7 +110,8 @@ export async function buildBonus(monthParam?: string | null): Promise<BonusPaylo
     const perWeek = mine.length / weeks;
     const out = perWeek >= perWeekTarget ? 1 : closePays(perWeek / perWeekTarget);
     const turn = rate(mx, revOnTime), qual = rate(mx, qualityOk);
-    const frac = mine.length ? (out * 15 + (turn ? closePays(turn.r) : 1) * 5 + (qual ? closePays(qual.r) : 0) * 10) / 30 : 0;
+    const turnPays = turn ? closePays(turn.r) : mine.some(t => t.status_time) ? 1 : 0;
+    const frac = mine.length ? (out * 15 + turnPays * 5 + (qual ? closePays(qual.r) : 0) * 10) / 30 : 0;
     return { frac, perWeek, n: mine.length, turn, qual };
   };
 
@@ -132,7 +133,10 @@ export async function buildBonus(monthParam?: string | null): Promise<BonusPaylo
       lines = [
         { id: 'output', label: 'Output', weight: 15, earned: outEarned, value: `${perWeek.toFixed(1)} edits / week`, target: '4+ = 10% · 7+ = 12.5% · 10+ = 15%', basis: `${mine.length} edits` },
         turn ? { ...rateLine('turnaround', 'Revision turnaround', 5, turn, 'revised edits'), value: `${pct(turn.r)} within ${BONUS_RULES.revisionHours}h` }
-          : { id: 'turnaround', label: 'Revision turnaround', weight: 5, earned: mine.length ? 5 : 0, value: mine.length ? 'no revisions needed' : 'no edits', target: '100% within 24h' },
+          : { id: 'turnaround', label: 'Revision turnaround', weight: 5,
+            // full marks only when status times are in and no edit needed a revision; otherwise not measured yet
+            earned: mine.some(t => t.status_time) ? 5 : 0,
+            value: !mine.length ? 'no edits' : mine.some(t => t.status_time) ? 'no revisions needed' : 'not measured yet (status times syncing)', target: '100% within 24h' },
         { ...rateLine('quality', 'Quality', 10, qual, 'edits with a revision count'), value: qual ? `${pct(qual.r)} within ${BONUS_RULES.maxRevisions} rounds` : 'no revision counts yet' },
       ];
     } else if (tier === 'senior') {
