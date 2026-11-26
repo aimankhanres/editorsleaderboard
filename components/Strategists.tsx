@@ -64,7 +64,7 @@ export default function Strategists() {
           <div className="card table-frame">
             <table className="dtable">
               <thead>
-                <tr><th>#</th><th>Strategist</th><th className="r">Spend</th><th>Share</th><th className="r">Briefs</th><th className="r">Ads</th>
+                <tr><th>#</th><th>Strategist</th><th className="r">Spend</th><th className="r" title="Ads whose name carries this pod: matches a Triple Whale filter on the pod">From pods</th><th className="r" title="Ads with no pod in the name, credited through the ClickUp Strategist field">From ClickUp</th><th>Share</th><th className="r">Briefs</th><th className="r">Ads</th>
                   <th className="r">Winners</th><th className="r" title="Briefs that produced a winner ad">Hit rate</th><th>Top editors</th></tr>
               </thead>
               <tbody>
@@ -100,6 +100,8 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
           </div>
         </td>
         <td className="r money-cell">{money(s.spend)}</td>
+        <td className="r">{s.podSpend ? money(s.podSpend) : <span className="faint">—</span>}</td>
+        <td className="r">{s.clickupSpend ? money(s.clickupSpend) : <span className="faint">—</span>}</td>
         <td><div className="share-cell"><span className="bar"><span style={{ width: `${Math.max(2, top ? (s.spend / top) * 100 : 0)}%` }} /></span><small>{(s.share * 100).toFixed(1)}%</small></div></td>
         <td className="r">{s.briefs}</td>
         <td className="r">{s.ads}</td>
@@ -108,7 +110,7 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
         <td><div className="chips">{s.editors.slice(0, 3).map(e => <span key={e.name} className="chip" title={money(e.spend)}>{e.name}</span>)}</div></td>
       </tr>
       {open && (
-        <tr className="dsub"><td colSpan={9}>
+        <tr className="dsub"><td colSpan={11}>
           <div className="board-split">
             <div className="bs-item">
               <div className="bs-h"><span>Where the spend came from</span></div>
