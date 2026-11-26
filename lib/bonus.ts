@@ -15,7 +15,7 @@ const TZ = process.env.CAPACITY_TIMEZONE ?? 'Asia/Karachi';
 export const BONUS_RULES = {
   close: [{ atLeast: 1, pays: 1 }, { atLeast: 0.9, pays: 0.75 }, { atLeast: 0.8, pays: 0.5 }],
   revisionHours: 24, // revisions completed within the agreed 24-hour window
-  reviewHours: 12, // Seniors review the queue at least twice a day
+  reviewHours: 24, // Senior review within 24h (Aiman, Nov 27 2026)
   backlogHours: 24, // work doesn't wait more than a day for Senior / Lead review
   maxRevisions: 2, // quality: edits stay within 2 revision rounds
   revisionStatus: /revision/i,
