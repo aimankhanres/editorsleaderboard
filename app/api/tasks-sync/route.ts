@@ -77,6 +77,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ month, briefs: rows.length, summary, byAgencyEditor: Object.entries(byAgencyEditor).sort((a, b) => b[1] - a[1]),
       sample: rows.slice(0, 25) });
   }
+  // ?diag=revisions : how "Total Revisions" and time in revision statuses are spread for edits finished this month (read-only)
+  if (url.searchParams.get('diag') === 'revisions') {
+    return NextResponse.json(await q(
+      `SELECT workspace, revisions, COUNT(*)::int n,
+              COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(status_time, '{}')) e WHERE e.key ~* 'revision' AND e.value::numeric > 0))::int AS had_revision_status
+         FROM cu_tasks WHERE jsonb_array_length(editors) > 0 AND COALESCE(edit_done, delivered) >= date_trunc('month', now())
+        GROUP BY 1, 2 ORDER BY 1, 2`));
+  }
   // ?diag=agencydates : which completion dates agency tasks carry, by status (read-only)
   if (url.searchParams.get('diag') === 'agencydates') {
     await store.ensureTaskTables();
