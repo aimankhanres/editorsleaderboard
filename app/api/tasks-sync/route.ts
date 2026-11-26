@@ -77,6 +77,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ month, briefs: rows.length, summary, byAgencyEditor: Object.entries(byAgencyEditor).sort((a, b) => b[1] - a[1]),
       sample: rows.slice(0, 25) });
   }
+  // ?diag=edits&id=<clickup user>&month=YYYY-MM : every task counted as that person's finished edit in the month (read-only)
+  if (url.searchParams.get('diag') === 'edits') {
+    const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7);
+    return NextResponse.json(await q(
+      `SELECT task_id, workspace, list_name, status, name, url, jsonb_array_length(editors) n_editors,
+              (SELECT string_agg(e->>'name', ' / ') FROM jsonb_array_elements(editors) e) editors,
+              to_char(edit_done AT TIME ZONE 'Asia/Karachi', 'MM-DD HH24:MI') edit_done,
+              to_char(delivered AT TIME ZONE 'Asia/Karachi', 'MM-DD HH24:MI') delivered,
+              to_char(created_at, 'YYYY-MM-DD') created, revisions
+         FROM cu_tasks
+        WHERE $1::bigint = ANY(editor_ids)
+          AND COALESCE(edit_done, delivered) >= (($2 || '-01')::date)::timestamp AT TIME ZONE 'Asia/Karachi'
+          AND COALESCE(edit_done, delivered) <  ((($2 || '-01')::date + interval '1 month'))::timestamp AT TIME ZONE 'Asia/Karachi'
+        ORDER BY COALESCE(edit_done, delivered)`, [Number(url.searchParams.get('id')), month]));
+  }
   // ?diag=revisions : how "Total Revisions" and time in revision statuses are spread for edits finished this month (read-only)
   if (url.searchParams.get('diag') === 'revisions') {
     return NextResponse.json(await q(
