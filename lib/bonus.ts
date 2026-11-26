@@ -65,7 +65,8 @@ const rate = (xs: Metric[], ok: (m: Metric) => boolean | null) => {
   const judged = xs.map(ok).filter((v): v is boolean => v !== null);
   return judged.length ? { r: judged.filter(Boolean).length / judged.length, n: judged.length } : null;
 };
-const pct = (r: number) => `${Math.round(r * 100)}%`;
+/** One decimal, so a rate just under a threshold (79.6%) never reads as reaching it (80%) */
+const pct = (r: number) => `${(Math.floor(r * 1000) / 10).toFixed(1).replace(/\.0$/, '')}%`;
 const qualityOk = (m: Metric) => (m.revisions == null ? null : m.revisions <= BONUS_RULES.maxRevisions);
 const revOnTime = (m: Metric) => (m.revPerRound == null ? null : m.revPerRound <= BONUS_RULES.revisionHours * 60);
 const reviewOnTime = (h: number) => (m: Metric) => (m.reviewPerRound == null ? null : m.reviewPerRound <= h * 60);
