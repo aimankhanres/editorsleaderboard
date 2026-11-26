@@ -2,7 +2,8 @@
  * Strategist attribution (Aiman, Nov 26 2026): the ad name's pod wins.
  *  1. Pod in the ad name ("…_Pod 111_…") -> that pod's strategist(s) (lib/pods.ts) get the ad's full spend; a shared pod
  *     is ONE joint row ("Liran Ravid / Farwa Javeed") with the full spend. Works on every ad, with or without a brief ID, whether or not an editor was found.
- *  2. No pod (or an unknown pod / the Auto Bot pod) -> the brief's ClickUp "Strategist" field: for agency (6-digit)
+ *  2. No pod (or an unknown pod / the Auto Bot pod) -> the brief's ClickUp "Strategist" field (a resize task: the ORIGINAL
+ *     brief's task, found through "_r<ID>" in its name, never the resize's own Strategist); for agency (6-digit)
  *     briefs the original agency task's Strategist first, else the Resilia task's. Two strategists = one joint row.
  *  3. Neither -> "No strategist", never dropped.
  * ClickUp Strategist users are matched to pod people by email (workspace members, kv `cu_users`), so one person is
@@ -59,6 +60,10 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     store.kvGet<{ users: { id: number; name: string; hash: string | null }[] }>('cu_users'),
   ]);
   const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: opts.agency ?? cfg.agencyCredit });
+  // Resize tasks ("16x9_AOG-28165_rAOG-100721_…", "Via resize: …"): the ORIGINAL brief's strategist gets the credit,
+  // never the resize task's own Strategist field
+  const originalOf = (taskName: string | null | undefined) => taskName?.match(/_r((?:OO|AOG|CIN)-\d{4,})/i)?.[1]?.toUpperCase() ?? null;
+  const originals = await store.originalStrategists([...new Set([...briefs.values()].map(b => originalOf(b.taskName)).filter((x): x is string => !!x))]);
   const emailOf = new Map((usersKv?.users ?? []).map(u => [`u:${u.id}`, u.hash]));
   // A ClickUp Strategist user -> the pod person with that email, else their own row
   const norm = (n: string) => n.normalize('NFD').replace(/[^a-zA-Z ]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -128,7 +133,11 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     let credited = false;
     for (const id of ad.briefIds) {
       const info = briefs.get(id);
-      const strats = (info?.agency?.strategists?.length ? info.agency.strategists : info?.strategists ?? []).map(fromClickUp);
+      const orig = originalOf(info?.taskName);
+      const raw = info?.agency?.strategists?.length ? info.agency.strategists
+        : orig ? originals.get(orig) ?? [] // a resize: the original's strategist only
+        : info?.strategists ?? [];
+      const strats = raw.map(fromClickUp);
       const uniq = [...new Map(strats.map(s => [s.key, s])).values()];
       if (!uniq.length) { none.spend += share; none.briefs.add(id); continue; }
       byClickUp += share; credited = true;

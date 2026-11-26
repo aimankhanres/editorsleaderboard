@@ -224,6 +224,25 @@ export async function loadBriefMap(briefIds: string[], opts: { agency?: boolean 
   return map;
 }
 
+/**
+ * Strategists of ORIGINAL briefs (for resize tasks, which credit the original's strategist): per brief ID, the
+ * Strategist of its task in Resilia's ClickUp or the agency's (Brief ID field, or a name starting with the ID),
+ * preferring a task that has one.
+ */
+export async function originalStrategists(briefIds: string[]): Promise<Map<string, EditorRef[]>> {
+  const out = new Map<string, EditorRef[]>();
+  if (!briefIds.length) return out;
+  await ensureTaskTables();
+  const rows = await q<{ id: string; strategists: { id: number; name: string }[] }>(
+    `SELECT DISTINCT ON (k.id) k.id, t.strategists
+       FROM unnest($1::text[]) AS k(id)
+       JOIN cu_tasks t ON upper(t.brief_id) = k.id OR (t.workspace = 'agency' AND upper(t.name) LIKE k.id || '%')
+      WHERE t.name !~* ('_r' || k.id)
+      ORDER BY k.id, (jsonb_array_length(t.strategists) > 0) DESC, (t.workspace = 'resilia') DESC, t.created_at NULLS LAST`, [briefIds]);
+  for (const r of rows) out.set(r.id, (r.strategists ?? []).map(u => ({ key: `u:${u.id}`, name: u.name, avatar: null })));
+  return out;
+}
+
 /** Assets each editor finished in [from, toExclusive) (in `tz`), by board, videos vs statics */
 export async function assetsDone(from: string, toExclusive: string, tz: string) {
   await ensureTaskTables();
