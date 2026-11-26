@@ -32,8 +32,9 @@ export default function Teams() {
   const internal = teams.filter(t => t.group !== 'Agency');
   const agency = teams.filter(t => t.group === 'Agency');
   const sum = (ts: TeamBoard[]) => ts.reduce((a, t) => a + t.spend, 0);
-  const tI = sum(internal), tA = sum(agency);
-  const best = [...teams].map(t => ({ t, per: perEditor(t) })).sort((a, b) => b.per - a.per)[0];
+  // Totals count each dollar once (a resized agency brief credits an agency AND a resize editor); team cards keep their own
+  const tI = data?.scopeSpend?.internal ?? sum(internal), tA = data?.scopeSpend?.agency ?? sum(agency);
+  const tAll = data?.scopeSpend?.all ?? tI + tA;
   const review = data ? data.total - data.attributed : 0;
 
   return (
@@ -51,9 +52,9 @@ export default function Teams() {
       {data && (
         <>
           <section className="stats">
-            <Stat label="Internal teams" value={money(tI)} sub={`${data.attributed ? Math.round((tI / data.attributed) * 100) : 0}% of ${money(data.attributed)} credited · ${internal.length} teams`} />
-            <Stat label="Agency teams" value={money(tA)} sub={`${data.attributed ? Math.round((tA / data.attributed) * 100) : 0}% of ${money(data.attributed)} credited · ${agency.length} teams`} />
-            <Stat label="Best spend per editor" value={best ? money(best.per) : '—'} sub={best?.t.name ?? ''} accent />
+            <Stat label="All teams" value={money(tAll)} sub={`${data.total ? Math.round((tAll / data.total) * 100) : 0}% of ${money(data.total)} ad spend, each dollar once`} />
+            <Stat label="Internal teams" value={money(tI)} sub={`${internal.length} teams`} />
+            <Stat label="Agency teams" value={money(tA)} sub={`${agency.length} teams · ${money(tI + tA - tAll)} also counted on Internal`} />
             <Stat label="Not credited yet" value={money(review)} sub="ads in Needs review on Editors" warn={review > 0} />
           </section>
           <Section title="Internal" teams={internal} total={tI} />

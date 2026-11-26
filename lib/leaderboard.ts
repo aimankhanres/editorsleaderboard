@@ -16,7 +16,20 @@ export type Allocation = {
   attributed: number;
   editors: Omit<EditorRow, 'rank' | 'prevRank'>[];
   review: ReviewItem[];
+  /** Dollars credited to at least one roster editor in each scope, each dollar counted ONCE (for "All …" totals) */
+  scopeSpend: ScopeSpend;
 };
+export type ScopeSpend = { all: number; internal: number; agency: number };
+
+const TEAM_GROUP = new Map(TEAMS.map(t => [t.id, t.group]));
+/** The scope a credit lands in: the team board it shows on for that person (lib/teams countsOnTeam), or null when the
+ * person isn't on any team list */
+function scopeOfCredit(key: string, board: string | null): 'internal' | 'agency' | null {
+  const teams = TEAMS_OF.get(key);
+  if (!teams?.length) return null;
+  const team = board && teams.includes(board) ? board : teams[0];
+  return TEAM_GROUP.get(team) === 'Agency' ? 'agency' : 'internal';
+}
 
 const tokens = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter(t => t.length >= 3));
 const firstName = (name: string) => name.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
@@ -38,6 +51,7 @@ export function allocate(
   const review: ReviewItem[] = [];
   let total = 0;
   let attributed = 0;
+  const scopeSpend: ScopeSpend = { all: 0, internal: 0, agency: 0 };
 
   // Ad-name cross-check: only the editors on the team lists (lib/teams.ts). First name, plus a nickname
   // written in brackets, e.g. "Lucylen (Lucy) Pagado" matches "Lucylen" and "Lucy".
@@ -88,20 +102,35 @@ export function allocate(
     }
     const share = ad.spend / ad.briefIds.length;
     const creditedKeys = new Set<string>();
+    // which scopes this share of the ad shows up in (each scope counts it once, however many people get it)
+    const landed = (eds: EditorRef[], b: BriefInfo, scopes: Set<string>) => {
+      const board = boardOf({ listId: b.listId ?? null, workspace: b.workspace, product: b.product, name: b.taskName });
+      for (const e of eds) { const sc = scopeOfCredit(e.key, board); if (sc) scopes.add(sc); }
+    };
     const creditedTokens = new Set<string>(); // every name word of the credited editors
 
     for (const briefId of ad.briefIds) {
       const info = briefs.get(briefId);
       const base = { adId: ad.adId, adName: ad.adName, spend: share, briefId, taskUrl: info?.taskUrl ?? null };
+      const scopes = new Set<string>();
+      const countScopes = () => {
+        if (scopes.size) scopeSpend.all += share;
+        if (scopes.has('internal')) scopeSpend.internal += share;
+        if (scopes.has('agency')) scopeSpend.agency += share;
+      };
       const resizeOk = !!info && info.status === 'ok' && info.editors.length > 0;
       // Agency (6-digit) briefs: the original agency editor is credited too, on the agency board. The resize editor
       // keeps their credit on the Resizing board; `attributed` counts the dollar once.
       const agencyEds = (info?.agency?.editors ?? []).filter(e => !(resizeOk && info!.editors.some(x => x.key === e.key)));
       if (info?.agency && agencyEds.length) {
-        credit(agencyEds, share, ad, {
+        const agencyInfo: BriefInfo = {
           ...info, taskId: null, taskName: info.agency.taskName, taskUrl: info.agency.taskUrl, editors: agencyEds,
           status: 'ok', listId: null, workspace: 'agency', product: info.agency.product,
-        });
+        };
+        credit(agencyEds, share, ad, agencyInfo);
+        landed(agencyEds, agencyInfo, scopes);
+        if (resizeOk) landed(info.editors, info, scopes);
+        countScopes();
         if (!resizeOk) attributed += share;
         agencyEds.forEach(e => { creditedKeys.add(e.key); for (const t of tokens(e.name)) creditedTokens.add(t); });
         if (!resizeOk) continue;
@@ -123,6 +152,7 @@ export function allocate(
       } else {
         credit(info.editors, share, ad, info);
         attributed += share;
+        if (!info.agency || !agencyEds.length) { landed(info.editors, info, scopes); countScopes(); }
         info.editors.forEach(e => {
           creditedKeys.add(e.key);
           for (const n of [e.name, roster.get(e.key)?.name ?? '', watchNames.get(e.key) ?? '']) for (const t of tokens(n)) creditedTokens.add(t);
@@ -163,7 +193,8 @@ export function allocate(
   })).sort((x, y) => y.spend - x.spend || x.name.localeCompare(y.name));
 
   review.sort((a, b) => b.spend - a.spend);
-  return { total: round2(total), attributed: round2(attributed), editors, review: review.map(r => ({ ...r, spend: round2(r.spend) })) };
+  return { total: round2(total), attributed: round2(attributed), editors, review: review.map(r => ({ ...r, spend: round2(r.spend) })),
+    scopeSpend: { all: round2(scopeSpend.all), internal: round2(scopeSpend.internal), agency: round2(scopeSpend.agency) } };
 }
 
 export function rank(editors: Allocation['editors'], prev: Map<string, number>): EditorRow[] {
@@ -267,6 +298,7 @@ export async function buildLeaderboard(month: string, view: ChannelView = 'meta'
     attributed: alloc.attributed,
     editors: rank(alloc.editors, prev),
     teams: buildTeams(alloc.editors, prevSpend, TEAMS, assets),
+    scopeSpend: alloc.scopeSpend,
     review: alloc.review,
     lastSync: last,
     splitMode: cfg.splitMode,

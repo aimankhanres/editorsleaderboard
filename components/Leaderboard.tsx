@@ -25,7 +25,7 @@ const scopeOf = (t: TeamBoard): Scope => (t.group === 'Agency' ? 'agency' : 'int
 const inScope = (t: TeamBoard, s: Scope) => s === 'all' || scopeOf(t) === s;
 
 /** Every team in a scope as one board: each person once, their parts on each team added up */
-function mergeBoards(teams: TeamBoard[], id: string, name: string): TeamBoard {
+function mergeBoards(teams: TeamBoard[], id: string, name: string, dedupedSpend?: number): TeamBoard {
   const by = new Map<string, EditorRow>();
   for (const t of teams) for (const e of t.editors) {
     const p = by.get(e.key);
@@ -38,7 +38,8 @@ function mergeBoards(teams: TeamBoard[], id: string, name: string): TeamBoard {
       briefs: [...briefs.values()].sort((a, b) => b.spend - a.spend), winners: [...winners.values()].sort((a, b) => b.spend - a.spend) });
   }
   const rows = [...by.values()].sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
-  const spend = rows.reduce((a, r) => a + r.spend, 0);
+  // People keep their full credit; the board total counts each dollar once (a resized agency brief credits two people)
+  const spend = dedupedSpend ?? rows.reduce((a, r) => a + r.spend, 0);
   return { id, name, group: '', spend, winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
     editors: rows.map((r, i) => ({ ...r, share: spend ? r.spend / spend : 0, rank: i + 1, prevRank: null })) };
 }
@@ -108,7 +109,7 @@ export default function Leaderboard() {
   useEffect(() => { if (current !== 'review') setLastScope(scope); }, [current, scope]);
   const scopeTeams = teams.filter(t => inScope(t, scope));
   const scopeName = scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams';
-  const team = picked ?? (isScope(current) && data ? mergeBoards(scopeTeams, current, scopeName) : null);
+  const team = picked ?? (isScope(current) && data ? mergeBoards(scopeTeams, current, scopeName, data.scopeSpend?.[scope]) : null);
   const reviewCount = data?.review.length ?? 0;
   const label = 'All';
   const stale = data != null && (data.channel !== channel
@@ -222,8 +223,7 @@ function TeamView({ team, total, label, custom, combined, winnerSpend }: {
     <>
       <section className="stats">
         <Stat label={combined ? `${team.name}: spend` : `${team.name} team spend`} value={money(team.spend)}
-          sub={!total ? undefined : team.spend > total ? 'more than total ad spend: a resized agency brief counts for both its editors'
-            : `${((team.spend / total) * 100).toFixed(1)}% of all ad spend`} />
+          sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ad spend${combined ? ' · each dollar counted once' : ''}` : undefined} />
         <Stat label={`Winner ads (${threshold}+)`} value={String(team.winners)} highlight
           sub={team.winners ? `from ${editorsWithWinners} editor${editorsWithWinners === 1 ? '' : 's'}` : `none ${when} yet`} />
         <Stat label="Editors with spend" value={`${withSpend.length} of ${team.editors.length}`}
