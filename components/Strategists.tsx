@@ -8,11 +8,12 @@ import PeriodBar, { type Period } from './PeriodBar';
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 export default function Strategists() {
-  const [period, setPeriod] = useState<Period>({ month: thisMonth(), range: null, channel: 'meta' });
+  const [period, setPeriod] = useState<Period>({ month: thisMonth(), range: null, channel: 'all' });
   const [data, setData] = useState<StrategistPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+  const [scope, setScope] = useState<'all' | 'internal' | 'agency'>('all');
   const seq = useRef(0);
 
   const load = useCallback(async (p: Period) => {
@@ -29,7 +30,11 @@ export default function Strategists() {
   useEffect(() => { load(period); }, [period, load]);
 
   const q = query.trim().toLowerCase();
-  const rows = (data?.strategists ?? []).filter(s => !q || s.name.toLowerCase().includes(q));
+  // Internal = internal and vibe TV pods; Agency = agency pods; ClickUp-only people (not on a pod list) show under All
+  const scopeOf = (g: string) => (g === 'Agency' ? 'agency' : g === 'ClickUp only' ? 'other' : 'internal');
+  const inScope = (s: StrategistRow) => scope === 'all' || scopeOf(s.group) === scope;
+  const rows = (data?.strategists ?? []).filter(s => inScope(s) && (!q || s.name.toLowerCase().includes(q)));
+  const scopeSpend = rows.reduce((a, s) => a + s.spend, 0);
   const top = data?.strategists[0]?.spend ?? 0;
   const winners = new Set((data?.strategists ?? []).flatMap(s => s.winners.map(w => w.adId))).size;
   const briefs = (data?.strategists ?? []).reduce((a, s) => a + s.briefs, 0);
@@ -57,7 +62,14 @@ export default function Strategists() {
           </section>
 
           <section className="controls cap-controls">
-            <span className="muted">{rows.length} strategist{rows.length === 1 ? '' : 's'}</span>
+            <div className="seg" role="tablist" aria-label="Internal or agency">
+              {(['all', 'internal', 'agency'] as const).map(k => (
+                <button key={k} role="tab" aria-selected={scope === k} className={scope === k ? 'on' : ''} onClick={() => setScope(k)}>
+                  {k === 'all' ? 'All' : k === 'internal' ? 'Internal' : 'Agency'}
+                </button>
+              ))}
+            </div>
+            <span className="muted">{rows.length} strategist{rows.length === 1 ? '' : 's'} · {money(scopeSpend)}</span>
             <input className="search" type="search" placeholder="Search strategist" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search strategists" />
           </section>
 

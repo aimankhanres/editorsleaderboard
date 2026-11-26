@@ -3,10 +3,9 @@
 import { useState } from 'react';
 
 export type Period = { month: string; range: { from: string; to: string } | null; channel: 'meta' | 'google' | 'all' };
-const CHANNELS = [{ id: 'meta', label: 'Meta' }, { id: 'google', label: 'Google' }, { id: 'all', label: 'All' }] as const;
 const monthLabel = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-/** Month tabs, a custom date range and the ad-channel switch, shared by the attribution screens */
+/** Month tabs and a custom date range, shared by the attribution screens (always Meta + Google together) */
 export default function PeriodBar({ value, months, onChange, min, max }: {
   value: Period; months: string[]; onChange: (p: Period) => void; min?: string | null; max?: string | null;
 }) {
@@ -22,12 +21,6 @@ export default function PeriodBar({ value, months, onChange, min, max }: {
             onClick={() => { setCustom(false); onChange({ ...value, month: m, range: null }); }}>{monthLabel(m)}</button>
         ))}
         <button className={value.range || custom ? 'on' : ''} onClick={() => setCustom(c => !c)} aria-expanded={custom}>📅 Custom</button>
-      </div>
-      <div className="seg" role="tablist" aria-label="Ad channel">
-        {CHANNELS.map(c => (
-          <button key={c.id} role="tab" aria-selected={value.channel === c.id} className={value.channel === c.id ? 'on' : ''}
-            onClick={() => onChange({ ...value, channel: c.id })}>{c.label}</button>
-        ))}
       </div>
       {custom && (
         <form className="rp-form period-custom" onSubmit={e => { e.preventDefault(); if (from && to && from <= to) onChange({ ...value, range: { from, to } }); }}>

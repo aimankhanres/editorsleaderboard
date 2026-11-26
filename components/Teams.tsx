@@ -11,7 +11,7 @@ const TIER = { lead: 'Lead', senior: 'Senior', editor: 'Editor' } as const;
 
 /** Spend per team: every internal team and every agency team on its own card */
 export default function Teams() {
-  const [period, setPeriod] = useState<Period>({ month: thisMonth(), range: null, channel: 'meta' });
+  const [period, setPeriod] = useState<Period>({ month: thisMonth(), range: null, channel: 'all' });
   const [data, setData] = useState<LeaderboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);

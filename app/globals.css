@@ -424,6 +424,13 @@ button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed {
 .set-history > div { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .set-history > div:last-child { border-bottom: 0; }
 
+.scope-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 18px 0 -6px; }
+.review-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow); font-weight: 650; font-size: 14px; color: var(--text-2); }
+.review-btn:hover, .review-btn.on { border-color: var(--accent); color: var(--accent); }
+
+.cap-scope { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 4px; }
+.cap-team-chips { margin: 8px 0 16px; }
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }

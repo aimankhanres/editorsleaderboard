@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
 import type { MissingReason, MissingTask } from '@/lib/missing';
 import { ago, initials, money, monthLabel } from '@/lib/format';
-import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
+import { type ChannelView } from '@/lib/channels';
 
 const POLL_MS = 60_000;
 
@@ -18,7 +18,30 @@ const REVIEW_LABEL: Record<ReviewKind, { title: string; hint: string }> = {
 };
 const REVIEW_ORDER: ReviewKind[] = ['no_editor', 'task_not_found', 'no_brief_id', 'pending', 'other_workspace', 'name_mismatch'];
 
-type View = string; // a team id, or 'review'
+type View = string; // a team id, 'all' | 'internal' | 'agency' (every team in that scope together), or 'review'
+type Scope = 'all' | 'internal' | 'agency';
+const SCOPES: { id: Scope; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'internal', label: 'Internal' }, { id: 'agency', label: 'Agency' }];
+const scopeOf = (t: TeamBoard): Scope => (t.group === 'Agency' ? 'agency' : 'internal');
+const inScope = (t: TeamBoard, s: Scope) => s === 'all' || scopeOf(t) === s;
+
+/** Every team in a scope as one board: each person once, their parts on each team added up */
+function mergeBoards(teams: TeamBoard[], id: string, name: string): TeamBoard {
+  const by = new Map<string, EditorRow>();
+  for (const t of teams) for (const e of t.editors) {
+    const p = by.get(e.key);
+    if (!p) { by.set(e.key, { ...e, briefs: [...e.briefs], winners: [...e.winners] }); continue; }
+    const briefs = new Map(p.briefs.map(b => [b.briefId, { ...b }]));
+    for (const b of e.briefs) { const x = briefs.get(b.briefId); if (x) { x.spend += b.spend; x.ads += b.ads; } else briefs.set(b.briefId, { ...b }); }
+    const winners = new Map([...p.winners, ...e.winners].map(w => [w.adId, w]));
+    by.set(e.key, { ...p, spend: p.spend + e.spend, ads: p.ads + e.ads, videos: (p.videos ?? 0) + (e.videos ?? 0),
+      statics: (p.statics ?? 0) + (e.statics ?? 0), minutes: (p.minutes ?? 0) + (e.minutes ?? 0), inClickUp: p.inClickUp || e.inClickUp,
+      briefs: [...briefs.values()].sort((a, b) => b.spend - a.spend), winners: [...winners.values()].sort((a, b) => b.spend - a.spend) });
+  }
+  const rows = [...by.values()].sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+  const spend = rows.reduce((a, r) => a + r.spend, 0);
+  return { id, name, group: '', spend, winners: new Set(rows.flatMap(r => r.winners.map(w => w.adId))).size,
+    editors: rows.map((r, i) => ({ ...r, share: spend ? r.spend / spend : 0, rank: i + 1, prevRank: null })) };
+}
 
 function readHash(): View | null {
   if (typeof window === 'undefined') return null;
@@ -30,11 +53,8 @@ export default function Leaderboard() {
   const [data, setData] = useState<LeaderboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setViewState] = useState<View | null>(null);
-  const [channel, setChannelState] = useState<ChannelView>('meta');
-  const setChannel = (c: ChannelView) => {
-    setChannelState(c);
-    try { localStorage.setItem('channel', c); } catch { /* storage unavailable */ }
-  };
+  // Meta + Google together: the dashboard no longer splits by channel (the data pipeline still pulls both)
+  const channel: ChannelView = 'all';
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
   const [, tick] = useState(0);
@@ -71,19 +91,21 @@ export default function Leaderboard() {
   useEffect(() => { const id = setInterval(() => tick(t => t + 1), 30_000); return () => clearInterval(id); }, []);
   useEffect(() => {
     setViewState(readHash());
-    try { const c = localStorage.getItem('channel'); if (isView(c)) setChannelState(c); } catch { /* storage unavailable */ }
   }, []);
 
   const teams = data?.teams ?? [];
-  const current: View = view && (view === 'review' || teams.some(t => t.id === view)) ? view : teams[0]?.id ?? 'review';
-  const team = teams.find(t => t.id === current) ?? null;
-  const groups = [...new Set(teams.map(t => t.group ?? ''))];
-  // The review tab keeps whichever group was last shown
-  const [lastGroup, setLastGroup] = useState('');
-  const group = team ? team.group ?? '' : lastGroup || groups[0] || '';
-  useEffect(() => { if (team) setLastGroup(team.group ?? ''); }, [team]);
+  const isScope = (v: string | null): v is Scope => v === 'all' || v === 'internal' || v === 'agency';
+  const current: View = view && (view === 'review' || isScope(view) || teams.some(t => t.id === view)) ? view : 'all';
+  // The scope (All / Internal / Agency) follows the team picked; Needs review keeps the last one
+  const [lastScope, setLastScope] = useState<Scope>('all');
+  const picked = teams.find(t => t.id === current) ?? null;
+  const scope: Scope = isScope(current) ? current : picked ? scopeOf(picked) : lastScope;
+  useEffect(() => { if (current !== 'review') setLastScope(scope); }, [current, scope]);
+  const scopeTeams = teams.filter(t => inScope(t, scope));
+  const scopeName = scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams';
+  const team = picked ?? (isScope(current) && data ? mergeBoards(scopeTeams, current, scopeName) : null);
   const reviewCount = data?.review.length ?? 0;
-  const label = viewLabel(data?.channel ?? channel);
+  const label = 'All';
   const stale = data != null && (data.channel !== channel
     || (range ? data.range?.from !== range.from || data.range?.to !== range.to : data.range != null));
   const period = data?.range ? `${fmtDate(data.range.from)} – ${fmtDate(data.range.to)}` : null;
@@ -96,10 +118,7 @@ export default function Leaderboard() {
           <div>
           <div className="crumb">Attribution</div>
           <h1>Editors</h1>
-          <p className="sub">
-            Ad spend on ads built from each editor&apos;s briefs · <strong>{label === 'All' ? 'Meta + Google' : label}</strong>
-            {label !== 'Meta' ? ' (Google: video campaigns only)' : ''}
-          </p>
+          <p className="sub">Ad spend (Meta + Google video) on ads built from each editor&apos;s briefs</p>
           </div>
         </div>
         <div className="sync">
@@ -113,34 +132,31 @@ export default function Leaderboard() {
         </div>
       </header>
 
-      {groups.length > 1 && (
-        <div className="groups seg small" role="tablist" aria-label="Team group">
-          {groups.map(g => (
-            <button key={g} role="tab" aria-selected={group === g} className={group === g ? 'on' : ''}
-              onClick={() => { const first = teams.find(t => (t.group ?? '') === g); if (first) setView(first.id); }}>{g}</button>
+      <div className="scope-bar">
+        <div className="seg" role="tablist" aria-label="Internal or agency">
+          {SCOPES.map(x => (
+            <button key={x.id} role="tab" aria-selected={current !== 'review' && scope === x.id} className={current !== 'review' && scope === x.id ? 'on' : ''}
+              onClick={() => setView(x.id)}>{x.label}</button>
           ))}
         </div>
-      )}
-      <nav className="teams" role="tablist" aria-label="Team">
-        {teams.filter(t => (t.group ?? '') === group).map(t => (
-          <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
-            {t.name} <span className="count">{t.editors.length}</span>
-          </button>
-        ))}
-        <button role="tab" aria-selected={current === 'review'} className={current === 'review' ? 'on' : ''} onClick={() => setView('review')}>
+        <button className={`review-btn ${current === 'review' ? 'on' : ''}`} onClick={() => setView('review')}>
           Needs review {reviewCount > 0 && <span className="count warn">{reviewCount}</span>}
         </button>
-      </nav>
+      </div>
+      {current !== 'review' && (
+        <nav className="teams" role="tablist" aria-label="Team">
+          <button role="tab" aria-selected={isScope(current)} className={isScope(current) ? 'on' : ''} onClick={() => setView(scope)}>
+            {scopeName} <span className="count">{new Set(scopeTeams.flatMap(t => t.editors.map(e => e.key))).size}</span>
+          </button>
+          {scopeTeams.map(t => (
+            <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
+              {t.name} <span className="count">{t.editors.length}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       <section className="controls">
-        <div className="control">
-          <span className="control-label">Channel</span>
-          <div className="seg" role="tablist" aria-label="Ad channel">
-            {VIEWS.map(v => (
-              <button key={v.id} role="tab" aria-selected={channel === v.id} className={channel === v.id ? 'on' : ''} onClick={() => setChannel(v.id)}>{v.label}</button>
-            ))}
-          </div>
-        </div>
         <div className="control grow">
           <span className="control-label">Period</span>
           <div className="seg" aria-label="Period">
@@ -172,7 +188,7 @@ export default function Leaderboard() {
       <div className={stale ? 'loading' : ''}>
         {data && team && (
           <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`}
-            team={team} total={data.total} label={label} custom={data.range != null} winnerSpend={data.winnerSpend} />
+            team={team} total={data.total} label={label} custom={data.range != null} combined={isScope(current)} winnerSpend={data.winnerSpend} />
         )}
         {data && current === 'review' && <ReviewView data={data} label={label} />}
       </div>
@@ -180,9 +196,10 @@ export default function Leaderboard() {
   );
 }
 
-function TeamView({ team, total, label, custom, winnerSpend }: {
-  team: TeamBoard; total: number; label: string; custom: boolean; winnerSpend: number;
+function TeamView({ team, total, label, custom, combined, winnerSpend }: {
+  team: TeamBoard; total: number; label: string; custom: boolean; combined: boolean; winnerSpend: number;
 }) {
+  const moves = !custom && !combined; // rank changes are kept per team only
   const when = custom ? 'in this period' : 'this month';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'spend' | 'winners'>('spend');
@@ -199,8 +216,8 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
   return (
     <>
       <section className="stats">
-        <Stat label={`${team.name} team spend`} value={money(team.spend)}
-          sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ${label === 'All' ? '' : `${label} `}spend` : undefined} />
+        <Stat label={combined ? `${team.name}: spend` : `${team.name} team spend`} value={money(team.spend)}
+          sub={total ? `${((team.spend / total) * 100).toFixed(1)}% of all ad spend` : undefined} />
         <Stat label={`Winner ads (${threshold}+)`} value={String(team.winners)} highlight
           sub={team.winners ? `from ${editorsWithWinners} editor${editorsWithWinners === 1 ? '' : 's'}` : `none ${when} yet`} />
         <Stat label="Editors with spend" value={`${withSpend.length} of ${team.editors.length}`}
@@ -209,7 +226,7 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
       </section>
 
       {!withSpend.length && <div className="empty">No spend credited to the {team.name} team {when}.</div>}
-      {withSpend.length > 0 && !q && <Podium editors={withSpend.slice(0, 3)} moves={!custom} />}
+      {withSpend.length > 0 && !q && <Podium editors={withSpend.slice(0, 3)} moves={moves} />}
 
       {withSpend.length > 0 && (
         <section className="card table-card">
@@ -223,7 +240,7 @@ function TeamView({ team, total, label, custom, winnerSpend }: {
               <input className="search" type="search" placeholder="Search editor or role" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
             </div>
           </div>
-          <Rows editors={sorted.filter(match)} top={withSpend[0]?.spend ?? 0} moves={!custom && sort === 'spend'} threshold={threshold} team={team.name} />
+          <Rows editors={sorted.filter(match)} top={withSpend[0]?.spend ?? 0} moves={moves && sort === 'spend'} threshold={threshold} team={combined ? undefined : team.name} />
           {q && !withSpend.some(match) && <div className="empty small">Nobody with spend matches “{query}”.</div>}
         </section>
       )}
@@ -254,7 +271,7 @@ function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }
   return (
     <>
       <section className="stats">
-        <Stat label={label === 'All' ? 'Total spend (Meta + Google)' : `Total ${label} spend`} value={money(data.total)} />
+        <Stat label="Total spend (Meta + Google)" value={money(data.total)} />
         <Stat label="Credited to editors" value={money(data.attributed)} sub={data.total ? `${Math.round((data.attributed / data.total) * 100)}% (all editors, any team)` : undefined} />
         <Stat label="Not credited" value={money(unattributed)} warn={unattributed > 0} sub={`${data.review.length} items`} />
         <Stat label="Shared briefs" value={data.splitMode === 'joint' ? 'Joint' : 'Split'} sub={data.splitMode === 'joint' ? 'credited to the pair' : 'split evenly between editors'} />

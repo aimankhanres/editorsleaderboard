@@ -15,7 +15,9 @@ const PACE: Record<Pace, { label: string; cls: string }> = {
 };
 const TIER_LABEL = { lead: 'Lead', senior: 'Senior', editor: 'Editor' } as const;
 const TIER_ORDER = { lead: 0, senior: 1, editor: 2 } as const;
-const GROUP_TABS = ['All', 'Resizing', 'Iterations', 'Internal', 'Variations', 'Agency'];
+type Scope = 'all' | 'internal' | 'agency';
+const SCOPES: { id: Scope; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'internal', label: 'Internal' }, { id: 'agency', label: 'Agency' }];
+const scopeOf = (t: { group: string }): Scope => (t.group === 'Agency' ? 'agency' : 'internal');
 
 const fmtDay = (ymd: string, opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) =>
   new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
@@ -35,7 +37,8 @@ export default function Capacity() {
   const [showIdle, setShowIdle] = useState(false);
   const [data, setData] = useState<CapacityPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [group, setGroup] = useState<string>('All');
+  // 'all' | 'internal' | 'agency' (every team in that scope) or one team id
+  const [group, setGroup] = useState<string>('all');
   const [query, setQuery] = useState('');
   const seq = useRef(0);
 
@@ -54,7 +57,7 @@ export default function Capacity() {
   }, []);
 
   useEffect(() => {
-    try { const g = localStorage.getItem('capGroup'); if (g) setGroup(g); } catch { /* storage unavailable */ }
+    try { const g = localStorage.getItem('capSel'); if (g) setGroup(g); } catch { /* storage unavailable */ }
   }, []);
   useEffect(() => {
     load(week, range);
@@ -62,15 +65,17 @@ export default function Capacity() {
     return () => clearInterval(id);
   }, [week, range, load]);
   // A saved tab that no longer exists (tabs were renamed) falls back to All
-  useEffect(() => { if (data && group !== 'All' && !data.teams.some(t => t.group === group)) setGroup('All'); }, [data, group]);
-  const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capGroup', g); } catch { /* ignore */ } };
+  useEffect(() => { if (data && !['all', 'internal', 'agency'].includes(group) && !data.teams.some(t => t.id === group)) setGroup('all'); }, [data, group]);
+  const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capSel', g); } catch { /* ignore */ } };
 
-  // Tabs: the team groups
-  const tabOf = (t: CapacityTeam) => t.group;
-  const groups = data ? GROUP_TABS.filter(g => g === 'All' || data.teams.some(t => t.group === g)) : ['All'];
+  // All / Internal / Agency, then one button per team in that scope
+  const picked = data?.teams.find(t => t.id === group);
+  const scope: Scope = picked ? scopeOf(picked) : (group as Scope);
+  const scopeTeams = (data?.teams ?? []).filter(t => scope === 'all' || scopeOf(t) === scope);
+  const inSel = (t: CapacityTeam) => (picked ? t.id === picked.id : scope === 'all' || scopeOf(t) === scope);
   const q = query.trim().toLowerCase();
   const teams = (data?.teams ?? [])
-    .filter(t => group === 'All' || tabOf(t) === group)
+    .filter(inSel)
     .map(t => (q ? { ...t, members: t.members.filter(m => m.name.toLowerCase().includes(q)) } : t))
     .filter(t => !q || t.members.length);
   const stale = data != null && (range ? data.mode !== 'range' || data.week !== range.from || data.weekEnd !== range.to
@@ -91,9 +96,9 @@ export default function Capacity() {
   const monthToDate = () => { if (data) applyRange({ from: `${data.today.slice(0, 8)}01`, to: data.today }); };
   // Summary cards follow the selected tab (each person once, like the company totals)
   const c = (() => {
-    if (!data || group === 'All') return data?.company;
+    if (!data || group === 'all') return data?.company;
     const people = new Map<string, CapacityMember>();
-    for (const t of data.teams.filter(t => tabOf(t) === group)) for (const m of t.members) if (m.inClickUp && !people.has(m.key)) people.set(m.key, m);
+    for (const t of data.teams.filter(inSel)) for (const m of t.members) if (m.inClickUp && !people.has(m.key)) people.set(m.key, m);
     const p = [...people.values()];
     const sum = (f: (x: CapacityMember) => number) => p.reduce((a, x) => a + f(x), 0);
     return { editors: p.length, done: sum(x => x.done), target: sum(x => x.target), expected: sum(x => x.expected),
@@ -101,7 +106,7 @@ export default function Capacity() {
   })();
   // Headcount, idle editors and backlogged pipelines for the selected tab (each person once)
   const view = (() => {
-    const inView = (data?.teams ?? []).filter(t => group === 'All' || tabOf(t) === group);
+    const inView = (data?.teams ?? []).filter(inSel);
     const everyone = new Map<string, CapacityMember>();
     for (const t of inView) for (const m of t.members) {
       const prev = everyone.get(m.key);
@@ -168,6 +173,19 @@ export default function Capacity() {
 
       {data && c && (
         <div className={stale ? 'loading' : ''}>
+          <section className="cap-scope">
+            <div className="seg" role="tablist" aria-label="Internal or agency">
+              {SCOPES.map(x => <button key={x.id} role="tab" aria-selected={scope === x.id} className={scope === x.id ? 'on' : ''} onClick={() => pickGroup(x.id)}>{x.label}</button>)}
+            </div>
+            <input className="search" type="search" placeholder="Search editor" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
+          </section>
+          <nav className="teams cap-team-chips" role="tablist" aria-label="Team">
+            <button role="tab" aria-selected={!picked} className={!picked ? 'on' : ''} onClick={() => pickGroup(scope)}>
+              {scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams'}
+            </button>
+            {scopeTeams.map(t => <button key={t.id} role="tab" aria-selected={picked?.id === t.id} className={picked?.id === t.id ? 'on' : ''} onClick={() => pickGroup(t.id)}>{t.name}</button>)}
+          </nav>
+
           <section className="stats">
             <Stat label="Edits done" value={`${c.done}`} sub={`of ${c.target} capacity · ${pct(c.done, c.target)}%`} />
             <Stat label={data.current ? 'Expected by today' : isRange ? 'Capacity' : 'Weekly capacity'} value={`${data.current ? c.expected : c.target}`}
@@ -198,15 +216,6 @@ export default function Capacity() {
             </div>
           )}
 
-          <section className="controls cap-controls">
-            <div className="control">
-              <span className="control-label">Teams</span>
-              <div className="seg cap-tabs" role="tablist" aria-label="Team">
-                {groups.map(g => <button key={g} role="tab" aria-selected={group === g} className={group === g ? 'on' : ''} onClick={() => pickGroup(g)}>{g}</button>)}
-              </div>
-            </div>
-            <input className="search" type="search" placeholder="Search editor" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search editors" />
-          </section>
 
           {teams.map(t => <TeamCard key={`${t.id}-${data.week}`} team={t} data={data} forceOpen={!!q} />)}
           {!teams.length && <div className="empty">Nobody matches “{query}”.</div>}
