@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { BonusPayload, Line, Scorecard } from '@/lib/bonus';
 import { initials, money } from '@/lib/format';
+import { TEAMS } from '@/lib/teams';
+
+const GROUP_OF = new Map(TEAMS.map(t => [t.name, t.group]));
 
 const TIER_LABEL = { lead: 'Lead Editor', senior: 'Senior Editor', editor: 'Base Editor' } as const;
 const fmtPct = (n: number) => `${Math.round(n * 10) / 10}%`;
@@ -16,6 +19,9 @@ export default function Bonus() {
   const [data, setData] = useState<BonusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<'all' | 'internal' | 'agency'>('all');
+  // a team group (Resizing / Iterations / Internal / Variations) or one agency team; '' = everyone in the scope
+  const [sub, setSub] = useState('');
+  const pickScope = (s: 'all' | 'internal' | 'agency') => { setScope(s); setSub(''); };
   const [level, setLevel] = useState<'all' | 'editor' | 'senior' | 'lead'>('all');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -35,8 +41,12 @@ export default function Bonus() {
   const q = query.trim().toLowerCase();
   const rows = useMemo(() => (data?.people ?? []).filter(p =>
     (scope === 'all' || (scope === 'agency') === (p.group === 'Agency'))
+    && (!sub || (scope === 'agency' ? p.teams.includes(sub) : p.teams.some(t => GROUP_OF.get(t) === sub)))
     && (level === 'all' || p.tier === level)
-    && (!q || `${p.name} ${p.teams.join(' ')}`.toLowerCase().includes(q))), [data, scope, level, q]);
+    && (!q || `${p.name} ${p.teams.join(' ')}`.toLowerCase().includes(q))), [data, scope, level, q, sub]);
+  // Buttons under All / Internal / Agency: the internal groups, or the agency teams
+  const subs = scope === 'agency' ? TEAMS.filter(t => t.group === 'Agency').map(t => t.name)
+    : [...new Set(TEAMS.filter(t => scope === 'all' || t.group !== 'Agency').map(t => t.group))];
   const avg = rows.length ? rows.reduce((a, p) => a + p.total / p.max, 0) / rows.length : 0;
   const full = rows.filter(p => p.total >= p.max - 0.01).length;
   const zero = rows.filter(p => p.total < 0.01).length;
@@ -85,13 +95,18 @@ export default function Bonus() {
 
           <section className="controls cap-controls">
             <div className="seg" role="tablist" aria-label="Internal or agency">
-              {(['all', 'internal', 'agency'] as const).map(k => <button key={k} role="tab" aria-selected={scope === k} className={scope === k ? 'on' : ''} onClick={() => setScope(k)}>{k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>)}
+              {(['all', 'internal', 'agency'] as const).map(k => <button key={k} role="tab" aria-selected={scope === k} className={scope === k ? 'on' : ''} onClick={() => pickScope(k)}>{k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>)}
             </div>
             <div className="seg small" role="tablist" aria-label="Level">
               {(['all', 'editor', 'senior', 'lead'] as const).map(k => <button key={k} role="tab" aria-selected={level === k} className={level === k ? 'on' : ''} onClick={() => setLevel(k)}>{k === 'all' ? 'All levels' : TIER_LABEL[k]}s</button>)}
             </div>
             <input className="search" type="search" placeholder="Search name or team" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search people" />
           </section>
+
+          <nav className="teams cap-team-chips" role="tablist" aria-label="Team">
+            <button role="tab" aria-selected={!sub} className={!sub ? 'on' : ''} onClick={() => setSub('')}>{scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams'}</button>
+            {subs.map(g => <button key={g} role="tab" aria-selected={sub === g} className={sub === g ? 'on' : ''} onClick={() => setSub(g)}>{g}</button>)}
+          </nav>
 
           <div className="card table-frame">
             <table className="dtable">
