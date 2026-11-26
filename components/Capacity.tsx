@@ -65,8 +65,7 @@ export default function Capacity() {
   useEffect(() => { if (data && group !== 'All' && !data.teams.some(t => t.group === group)) setGroup('All'); }, [data, group]);
   const pickGroup = (g: string) => { setGroup(g); try { localStorage.setItem('capGroup', g); } catch { /* ignore */ } };
 
-  // Tabs: All, Resizing (Resizing + Rips boards), then every other team on its own tab
-  // Tabs: the team groups (Resizing = Resizing + Rips boards)
+  // Tabs: the team groups
   const tabOf = (t: CapacityTeam) => t.group;
   const groups = data ? GROUP_TABS.filter(g => g === 'All' || data.teams.some(t => t.group === g)) : ['All'];
   const q = query.trim().toLowerCase();

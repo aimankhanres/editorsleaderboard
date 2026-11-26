@@ -96,7 +96,7 @@ export async function buildPipeline(opts: { from?: string | null; to?: string | 
     if (board) get(board).stale += r.n;
   }
   // Every team with a board appears, even with nothing queued
-  for (const team of TEAMS) if (team.id !== 'rips') get(team.id);
+  for (const team of TEAMS) get(team.id);
   const teams = [...acc.values()].map(t => ({
     ...t, statuses: t.statuses.sort((a, b) => b.n - a.n),
     weeksQueued: t.weekCapacity ? Math.round((t.queue / t.weekCapacity) * 10) / 10 : null,

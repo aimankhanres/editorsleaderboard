@@ -58,6 +58,12 @@ export const TEAMS: Team[] = [
       { id: 106919261, name: 'Arslan Sahabrso', role: RESIZE },
       { id: 106919268, name: 'Rehman Khan', role: RESIZE },
       { id: 106919233, name: 'Manu Bhardwaj', role: 'Video Editor – Resizing' }, // not on the Nov 2026 org chart; added from ClickUp activity (Garlic Resizing)
+      // Rips editors (merged into Resizing, Nov 26 2026)
+      { id: 106853409, name: 'Clariz Barrera', role: RESIZE },
+      { id: 106886777, name: 'Ayyaz Sohail', role: 'Sr. Editor' },
+      { id: 106853408, name: 'Cristian Jay Reyes', role: 'Editing Lead – Resizing' },
+      { id: 106842654, name: 'Jasmin Marinay', role: RESIZE },
+      { id: 101069834, name: 'Lucylen (Lucy) Pagado', role: RESIZE },
     ],
   },
   {
@@ -79,19 +85,6 @@ export const TEAMS: Team[] = [
       { id: 106850985, name: 'Rolling Gonzalez', role: GOOGLE },
       { id: 106926186, name: 'Anum Naqvi', role: 'Editor – Google Iterations' },
       { id: 106838082, name: 'Abdul Qadir', role: GOOGLE }, // added from the Nov 2026 org chart
-    ],
-  },
-  {
-    id: 'rips', name: 'Rips', group: 'Resizing', kpi: KPI_STANDARD,
-    // Rips editors: only on this board (the org chart lists them under Resizing). Credited with all their ClickUp
-    // work for now; a rip-only filter is TBD. Capacity: 1 rip a day, 5 a week.
-    nameCheck: true,
-    members: [
-      { id: 106853409, name: 'Clariz Barrera', role: RESIZE },
-      { id: 106886777, name: 'Ayyaz Sohail', role: 'Sr. Editor' },
-      { id: 106853408, name: 'Cristian Jay Reyes', role: 'Editing Lead – Resizing' },
-      { id: 106842654, name: 'Jasmin Marinay', role: RESIZE },
-      { id: 101069834, name: 'Lucylen (Lucy) Pagado', role: RESIZE },
     ],
   },
   {

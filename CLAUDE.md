@@ -51,9 +51,7 @@ Details:
 
 ## Teams (what the dashboard shows)
 
-- Boards: **Resizing**, **Iterations** and **Rips** (Resizing group), **Iterations** (own group), plus the Internal, Variations and Agency teams from the org chart. Rips (Clariz, Ayyaz, Cristian, Jasmin, Lucy: only on Rips, not Resizing;
-  credited with all their ClickUp work for now, a rip-only task filter is still to be defined since nothing in
-  ClickUp marks rips yet), defined in
+- Boards: **Resizing** (Rips editors Clariz, Ayyaz, Cristian, Jasmin and Lucy merged into it on Nov 26 2026), **Iterations**, plus the Internal, Variations and Agency teams from the org chart, defined in
   `lib/teams.ts` by ClickUp user id. Only listed
   people appear; members with no spend this month are listed under "No spend yet". Ranks and rank changes
   are within each team (`buildTeams`). Attribution itself is unchanged: an editor's spend is everything
