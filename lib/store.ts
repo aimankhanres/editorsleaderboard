@@ -209,10 +209,15 @@ export async function loadBriefMap(briefIds: string[], opts: { agency?: boolean 
   if (agencyIds.length) {
     const ag = await q<{ brief_id: string; name: string; url: string | null; product: string | null;
       editors: { id: number; name: string }[]; strategists: { id: number; name: string }[] }>(
-      `SELECT DISTINCT ON (k.id) k.id AS brief_id, t.name, t.url, t.product, t.editors, t.strategists
-         FROM unnest($1::text[]) AS k(id)
-         JOIN cu_tasks t ON t.workspace = 'agency' AND (upper(t.brief_id) = k.id OR upper(t.name) LIKE k.id || '%')
-        ORDER BY k.id, (jsonb_array_length(t.editors) > 0) DESC, t.created_at NULLS LAST`, [agencyIds]);
+      `SELECT DISTINCT ON (brief_id) brief_id, name, url, product, editors, strategists FROM (
+         SELECT COALESCE(CASE WHEN upper(brief_id) = ANY($1::text[]) THEN upper(brief_id) END,
+                         upper(substring(name from '^\\s*((?:OO|AOG|CIN)-[0-9]+)'))) AS brief_id,
+                name, url, product, editors, strategists, created_at
+           FROM cu_tasks
+          WHERE workspace = 'agency'
+            AND (upper(brief_id) = ANY($1::text[]) OR upper(substring(name from '^\\s*((?:OO|AOG|CIN)-[0-9]+)')) = ANY($1::text[]))) x
+        WHERE brief_id = ANY($1::text[])
+        ORDER BY brief_id, (jsonb_array_length(editors) > 0) DESC, created_at NULLS LAST`, [agencyIds]);
     const ref = (u: { id: number; name: string }): EditorRef => ({ key: `u:${u.id}`, name: u.name, avatar: null });
     for (const a of ag) {
       const agency = { editors: (a.editors ?? []).map(ref), strategists: (a.strategists ?? []).map(ref), taskName: a.name, taskUrl: a.url, product: a.product };
@@ -233,12 +238,18 @@ export async function originalStrategists(briefIds: string[]): Promise<Map<strin
   const out = new Map<string, EditorRef[]>();
   if (!briefIds.length) return out;
   await ensureTaskTables();
+  // One pass over the mirror: match on the Brief ID field, or (agency) the ID the task name starts with. Avoids a
+  // per-ID pattern join, which took minutes.
   const rows = await q<{ id: string; strategists: { id: number; name: string }[] }>(
-    `SELECT DISTINCT ON (k.id) k.id, t.strategists
-       FROM unnest($1::text[]) AS k(id)
-       JOIN cu_tasks t ON upper(t.brief_id) = k.id OR (t.workspace = 'agency' AND upper(t.name) LIKE k.id || '%')
-      WHERE t.name !~* ('_r' || k.id)
-      ORDER BY k.id, (jsonb_array_length(t.strategists) > 0) DESC, (t.workspace = 'resilia') DESC, t.created_at NULLS LAST`, [briefIds]);
+    `SELECT DISTINCT ON (id) id, strategists FROM (
+       SELECT COALESCE(CASE WHEN upper(brief_id) = ANY($1::text[]) THEN upper(brief_id) END,
+                       CASE WHEN workspace = 'agency' THEN upper(substring(name from '^\\s*((?:OO|AOG|CIN)-[0-9]+)')) END) AS id,
+              strategists, workspace, created_at, name
+         FROM cu_tasks
+        WHERE upper(brief_id) = ANY($1::text[])
+           OR (workspace = 'agency' AND upper(substring(name from '^\\s*((?:OO|AOG|CIN)-[0-9]+)')) = ANY($1::text[]))) x
+      WHERE id = ANY($1::text[]) AND name !~* ('_r' || id)
+      ORDER BY id, (jsonb_array_length(strategists) > 0) DESC, (workspace = 'resilia') DESC, created_at NULLS LAST`, [briefIds]);
   for (const r of rows) out.set(r.id, (r.strategists ?? []).map(u => ({ key: `u:${u.id}`, name: u.name, avatar: null })));
   return out;
 }
