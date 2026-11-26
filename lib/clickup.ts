@@ -298,6 +298,8 @@ export type MirroredTask = {
   created: number | null; updated: number | null; closed: number | null;
   /** "Size" labels (Static 4x5, Vertical 9x16 …), "Video Format/Style", "Product (SKU)", agency "Team", Frame link */
   sizes: string[]; format: string | null; product: string | null; team: string | null; frameUrl: string | null;
+  /** "Total Revisions" (Resilia) / "Total Revision Count" (agency) */
+  revisions: number | null;
 };
 
 type CuTaskFull = CuTask & {
@@ -350,6 +352,7 @@ function mirror(t: CuTaskFull, workspace: Workspace): MirroredTask {
     product: optionNames(byName('product (sku)'))[0] ?? null,
     team: optionNames(byName('team'))[0] ?? null,
     frameUrl: typeof frame === 'string' && frame.trim() ? frame.trim() : null,
+    revisions: (v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)))((byName('total revisions') ?? byName('total revision count'))?.value),
   };
 }
 
@@ -445,4 +448,27 @@ export async function workspaceUsers(): Promise<CuUser[]> {
     }
   }
   return [...out.values()];
+}
+
+// ------------------------------------------------------------------ time in status (read-only)
+
+/** Minutes each task spent in each status, by status name without its "6.1." numbering. Up to 100 tasks a call. */
+export async function timeInStatus(ids: string[], workspace: Workspace): Promise<Map<string, Record<string, number>>> {
+  const out = new Map<string, Record<string, number>>();
+  if (!ids.length) return out;
+  const qs = ids.slice(0, 100).map(id => `task_ids=${encodeURIComponent(id)}`).join('&');
+  const res = workspace === 'agency' ? await agencyFetch(`/task/bulk_time_in_status/task_ids?${qs}`) : await cuFetch(`/task/bulk_time_in_status/task_ids?${qs}`);
+  if (!res.ok) throw new Error(`ClickUp time in status ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  const body = (await res.json()) as Record<string, { status_history?: { status?: string; total_time?: { by_minute?: number } | string; total_time_minutes?: number }[] }>;
+  const map = (body as { tasks?: typeof body }).tasks ?? body;
+  for (const [id, t] of Object.entries(map)) {
+    const acc: Record<string, number> = {};
+    for (const h of t?.status_history ?? []) {
+      const name = (h.status ?? '').replace(/^[\d.\s]+/, '').trim().toLowerCase();
+      const mins = typeof h.total_time === 'object' ? Number(h.total_time?.by_minute ?? 0) : Number(h.total_time_minutes ?? 0);
+      if (name) acc[name] = (acc[name] ?? 0) + (Number.isFinite(mins) ? mins : 0);
+    }
+    out.set(id, acc);
+  }
+  return out;
 }

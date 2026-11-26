@@ -393,6 +393,9 @@ const TASK_DDL = [
   `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS mirrored_at timestamptz`,
   `CREATE INDEX IF NOT EXISTS cu_tasks_strat_idx ON cu_tasks USING gin (strategist_ids)`,
   `CREATE INDEX IF NOT EXISTS cu_tasks_list_idx ON cu_tasks (list_id)`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS revisions integer`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS status_time jsonb`,
+  `ALTER TABLE cu_tasks ADD COLUMN IF NOT EXISTS status_time_at timestamptz`,
   `CREATE TABLE IF NOT EXISTS frame_media ( frame_url text PRIMARY KEY, kind text NOT NULL, file_id text, seconds numeric(10,3), media_type text, name text, error text, checked_at timestamptz NOT NULL DEFAULT now() )`,
 ];
 export async function ensureTaskTables(): Promise<void> {
@@ -421,23 +424,23 @@ export async function upsertCuTasks(tasks: MirrorRow[]): Promise<void> {
       strategists: t.strategists, strategist_ids: t.strategists.map(e => e.id), senior_ids: t.seniors.map(e => e.id),
       brief_id: t.briefId, edit_done: ts(t.editDone), delivered: ts(t.delivered), assigned: ts(t.assigned),
       created_at: ts(t.created), updated_at: ts(t.updated), closed_at: ts(t.closed),
-      sizes: t.sizes, format: t.format, product: t.product, team: t.team, frame_url: t.frameUrl,
+      sizes: t.sizes, format: t.format, product: t.product, team: t.team, frame_url: t.frameUrl, revisions: t.revisions,
     }));
     await q(
       `INSERT INTO cu_tasks (task_id, workspace, name, url, list_id, list_name, status, status_type, editors, editor_ids,
                              strategists, strategist_ids, senior_ids, brief_id, edit_done, delivered, assigned,
-                             created_at, updated_at, closed_at, sizes, format, product, team, frame_url, mirrored_at)
+                             created_at, updated_at, closed_at, sizes, format, product, team, frame_url, revisions, mirrored_at)
        SELECT task_id, workspace, name, url, list_id, list_name, status, status_type, editors,
               ARRAY(SELECT jsonb_array_elements_text(editor_ids)::bigint), strategists,
               ARRAY(SELECT jsonb_array_elements_text(strategist_ids)::bigint),
               ARRAY(SELECT jsonb_array_elements_text(senior_ids)::bigint), brief_id,
               edit_done, delivered, assigned, created_at, updated_at, closed_at,
-              ARRAY(SELECT jsonb_array_elements_text(sizes)), format, product, team, frame_url, now()
+              ARRAY(SELECT jsonb_array_elements_text(sizes)), format, product, team, frame_url, revisions, now()
          FROM jsonb_to_recordset($1::jsonb) AS x(task_id text, workspace text, name text, url text, list_id text,
               list_name text, status text, status_type text, editors jsonb, editor_ids jsonb, strategists jsonb,
               strategist_ids jsonb, senior_ids jsonb, brief_id text, edit_done timestamptz, delivered timestamptz,
               assigned timestamptz, created_at timestamptz, updated_at timestamptz, closed_at timestamptz,
-              sizes jsonb, format text, product text, team text, frame_url text)
+              sizes jsonb, format text, product text, team text, frame_url text, revisions integer)
        ON CONFLICT (task_id) DO UPDATE SET workspace = EXCLUDED.workspace, name = EXCLUDED.name, url = EXCLUDED.url,
          list_id = EXCLUDED.list_id, list_name = EXCLUDED.list_name, status = EXCLUDED.status,
          status_type = EXCLUDED.status_type, editors = EXCLUDED.editors, editor_ids = EXCLUDED.editor_ids,
@@ -445,7 +448,7 @@ export async function upsertCuTasks(tasks: MirrorRow[]): Promise<void> {
          brief_id = EXCLUDED.brief_id, edit_done = EXCLUDED.edit_done, delivered = EXCLUDED.delivered,
          assigned = EXCLUDED.assigned, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
          closed_at = EXCLUDED.closed_at, sizes = EXCLUDED.sizes, format = EXCLUDED.format, product = EXCLUDED.product,
-         team = EXCLUDED.team, frame_url = EXCLUDED.frame_url, mirrored_at = now()`,
+         team = EXCLUDED.team, frame_url = EXCLUDED.frame_url, revisions = EXCLUDED.revisions, mirrored_at = now()`,
       [JSON.stringify(payload)],
     );
   }
@@ -544,4 +547,25 @@ export async function frameStats() {
 export async function resetFrameMedia(): Promise<void> {
   await ensureTaskTables();
   await q(`TRUNCATE frame_media`);
+}
+
+// ------------------------------------------------------------------ time in status (for the bonus scorecards)
+
+/** Finished tasks (last 75 days) with an editor whose time-in-status is missing or older than their last update */
+export async function tasksNeedingStatusTime(workspace: string, limit: number): Promise<string[]> {
+  await ensureTaskTables();
+  const rows = await q<{ task_id: string }>(
+    `SELECT task_id FROM cu_tasks
+      WHERE workspace = $1 AND jsonb_array_length(editors) > 0
+        AND COALESCE(edit_done, delivered) > now() - interval '75 days'
+        AND (status_time_at IS NULL OR status_time_at < updated_at)
+      ORDER BY COALESCE(edit_done, delivered) DESC LIMIT $2`, [workspace, limit]);
+  return rows.map(r => r.task_id);
+}
+
+export async function saveStatusTime(map: Map<string, Record<string, number>>): Promise<void> {
+  if (!map.size) return;
+  const payload = [...map].map(([task_id, st]) => ({ task_id, st }));
+  await q(`UPDATE cu_tasks t SET status_time = x.st, status_time_at = now()
+             FROM jsonb_to_recordset($1::jsonb) AS x(task_id text, st jsonb) WHERE t.task_id = x.task_id`, [JSON.stringify(payload)]);
 }

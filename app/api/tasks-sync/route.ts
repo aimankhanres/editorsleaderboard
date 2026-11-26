@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { agencyAccessCheck, agencyToken, workspaceUsers, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
+import { agencyAccessCheck, agencyToken, timeInStatus, workspaceUsers, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
 import * as store from '@/lib/store';
 import { q } from '@/lib/db';
 import { emailHash } from '@/lib/pods';
@@ -124,6 +124,24 @@ export async function GET(req: Request) {
     if (Date.now() - started >= BUDGET_MS) break;
   }
   const caughtUp = streams.every(s => report[s]?.caughtUp);
+  // Time in each status for recently finished tasks (bonus scorecards: revision and review turnaround), 100 per call
+  const tis: Record<string, { tasks: number; error?: string }> = {};
+  const wss: ('resilia' | 'agency')[] = agencyToken() ? ['resilia', 'agency'] : ['resilia'];
+  for (const ws of wss) {
+    tis[ws] = { tasks: 0 };
+    try {
+      for (let i = 0; i < 20 && Date.now() - started < 270_000; i++) {
+        const ids = await store.tasksNeedingStatusTime(ws, 100);
+        if (!ids.length) break;
+        const map = await timeInStatus(ids, ws);
+        // tasks ClickUp returned nothing for still get a stamp, so they aren't asked for again until they change
+        for (const id of ids) if (!map.has(id)) map.set(id, {});
+        await store.saveStatusTime(map);
+        tis[ws].tasks += ids.length;
+      }
+    } catch (e) { tis[ws].error = e instanceof Error ? e.message : String(e); }
+  }
+
   // Workspace members with emails (to match ClickUp Strategist users to the pod list), refreshed once a day
   const users = await store.kvGet<{ at: number }>('cu_users');
   if (!users || Date.now() - users.at > 864e5 || url.searchParams.get('users')) {
@@ -134,5 +152,5 @@ export async function GET(req: Request) {
       await store.kvSet('cu_users', { at: Date.now(), users: hashed });
     } catch (e) { console.error('users', e); }
   }
-  return NextResponse.json({ ok: true, caughtUp, rateLimited, report, ...(await store.cuTaskStats()), ms: Date.now() - started });
+  return NextResponse.json({ ok: true, caughtUp, rateLimited, report, timeInStatus: tis, ...(await store.cuTaskStats()), ms: Date.now() - started });
 }

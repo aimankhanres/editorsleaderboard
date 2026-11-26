@@ -474,6 +474,21 @@ button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed {
 .drow.t2 td:first-child { box-shadow: inset 4px 0 0 var(--silver); }
 .drow.t3 td:first-child { box-shadow: inset 4px 0 0 var(--bronze); }
 
+/* Bonus */
+.bonus-bar { display: flex; align-items: center; gap: 10px; }
+.bb-t { flex: 1; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; min-width: 90px; }
+.bb-t i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+.bonus-bar b { font-variant-numeric: tabular-nums; }
+.bonus-bar small { color: var(--muted); white-space: nowrap; }
+.score-table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.score-table th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 8px 12px; background: var(--soft); }
+.score-table td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+.score-table .r { text-align: right; }
+.manual-in { display: inline-flex; align-items: center; gap: 6px; }
+.manual-in input { width: 70px; font: inherit; font-size: 13.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+.bonus-foot { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.bonus-foot .search { width: 320px; }
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }
