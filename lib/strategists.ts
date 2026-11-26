@@ -23,6 +23,8 @@ export type StrategistRow = {
   editors: { name: string; spend: number }[];
   products: string[];
   topBriefs: { briefId: string; taskName: string | null; taskUrl: string | null; spend: number }[];
+  /** Biggest ads credited through the ClickUp Strategist field (no pod in the ad name): for checking */
+  clickupAds: { adName: string; spend: number; briefId: string; taskName: string | null; taskUrl: string | null }[];
 };
 export type StrategistPayload = {
   month: string; range: { from: string; to: string } | null; channel: ChannelView; months: string[];
@@ -71,7 +73,8 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
 
   type Acc = Who & { spend: number; podSpend: number; clickupSpend: number; ads: Set<string>;
     briefs: Map<string, { taskName: string | null; taskUrl: string | null; spend: number }>;
-    winners: Map<string, WinnerAd>; editors: Map<string, number>; products: Set<string> };
+    winners: Map<string, WinnerAd>; editors: Map<string, number>; products: Set<string>;
+    clickupAds: Map<string, { adName: string; spend: number; briefId: string; taskName: string | null; taskUrl: string | null }> };
   const acc = new Map<string, Acc>();
   let total = 0, byPod = 0, byClickUp = 0, attributed = 0;
   const none = { spend: 0, ads: 0, briefs: new Set<string>() };
@@ -79,7 +82,7 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
 
   const credit = (who: Who, amount: number, ad: { adId: string; adName: string; spend: number }, briefId: string | null, via: 'pod' | 'clickup') => {
     let a = acc.get(who.key);
-    if (!a) { a = { ...who, spend: 0, podSpend: 0, clickupSpend: 0, ads: new Set(), briefs: new Map(), winners: new Map(), editors: new Map(), products: new Set() }; acc.set(who.key, a); }
+    if (!a) { a = { ...who, spend: 0, podSpend: 0, clickupSpend: 0, ads: new Set(), briefs: new Map(), winners: new Map(), editors: new Map(), products: new Set(), clickupAds: new Map() }; acc.set(who.key, a); }
     a.spend += amount;
     if (via === 'pod') a.podSpend += amount; else a.clickupSpend += amount;
     a.ads.add(ad.adId);
@@ -88,6 +91,11 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     const b = a.briefs.get(key) ?? { taskName: info?.agency?.taskName ?? info?.taskName ?? (briefId ? null : ad.adName), taskUrl: info?.agency?.taskUrl ?? info?.taskUrl ?? null, spend: 0 };
     b.spend += amount;
     a.briefs.set(key, b);
+    if (via === 'clickup' && briefId) {
+      const c = a.clickupAds.get(ad.adId) ?? { adName: ad.adName, spend: 0, briefId, taskName: b.taskName, taskUrl: b.taskUrl };
+      c.spend += amount;
+      a.clickupAds.set(ad.adId, c);
+    }
     if (ad.spend >= cfg.winnerSpend && !a.winners.has(ad.adId)) a.winners.set(ad.adId, { adId: ad.adId, adName: ad.adName, spend: round2(ad.spend), briefId: briefId ?? '', taskUrl: b.taskUrl });
     const eds = [...(info?.status === 'ok' ? info.editors : []), ...(info?.agency?.editors ?? [])];
     for (const e of eds) a.editors.set(e.name, (a.editors.get(e.name) ?? 0) + amount / eds.length);
@@ -140,6 +148,7 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
     winners: [...a.winners.values()].sort((x, y) => y.spend - x.spend),
     editors: [...a.editors].map(([name, spend]) => ({ name, spend: round2(spend) })).sort((x, y) => y.spend - x.spend).slice(0, 5),
     products: [...a.products].sort(),
+    clickupAds: [...a.clickupAds.values()].map(c => ({ ...c, spend: round2(c.spend) })).sort((x, y) => y.spend - x.spend).slice(0, 15),
     topBriefs: [...a.briefs].map(([briefId, b]) => ({ briefId, ...b, spend: round2(b.spend) })).sort((x, y) => y.spend - x.spend).slice(0, 25),
   })).sort((x, y) => y.spend - x.spend || x.name.localeCompare(y.name));
 

@@ -118,6 +118,15 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
               <div className="bs-h" style={{ marginTop: 12 }}><span>Editors on their ads</span></div>
               <ul className="mini-list">{s.editors.map(e => <li key={e.name}><span>{e.name}</span><b>{money(e.spend)}</b></li>)}</ul>
             </div>
+            {s.clickupAds.length > 0 && (
+              <div className="bs-item" style={{ gridColumn: '1 / -1' }}>
+                <div className="bs-h"><span>Biggest ads credited through ClickUp (no pod in the ad name)</span></div>
+                <ul className="mini-list">{s.clickupAds.slice(0, 10).map(c => (
+                  <li key={c.adName + c.briefId}><span className="ellip" title={c.adName}>{c.adName}</span>
+                    <span className="mono">{c.taskUrl ? <a href={c.taskUrl} target="_blank" rel="noreferrer">{c.briefId}</a> : c.briefId}</span><b>{money(c.spend)}</b></li>
+                ))}</ul>
+              </div>
+            )}
             <div className="bs-item" style={{ gridColumn: 'span 2' }}>
               <div className="bs-h"><span>Top briefs</span></div>
               <ul className="mini-list">{s.topBriefs.slice(0, 10).map(b => (
