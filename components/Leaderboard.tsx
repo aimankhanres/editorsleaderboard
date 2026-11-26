@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorRow, LeaderboardPayload, ReviewItem, ReviewKind, TeamBoard } from '@/lib/types';
+import type { MissingReason, MissingTask } from '@/lib/missing';
 import { ago, initials, money, monthLabel } from '@/lib/format';
 import { VIEWS, isView, viewLabel, type ChannelView } from '@/lib/channels';
 
@@ -259,6 +260,7 @@ function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }
         <Stat label="Shared briefs" value={data.splitMode === 'joint' ? 'Joint' : 'Split'} sub={data.splitMode === 'joint' ? 'credited to the pair' : 'split evenly between editors'} />
       </section>
       <Review items={data.review} />
+      <MissingEditorsGroup />
     </>
   );
 }
@@ -526,6 +528,76 @@ function downloadCsv(kind: ReviewKind, items: ReviewItem[]) {
   a.download = `needs-review-${kind.replace(/_/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const MISSING_REASON: Record<MissingReason, string> = { spend: 'Has ad spend', finished: 'Edit finished', in_progress: 'In progress' };
+
+/**
+ * Needs review group: tasks on Resilia's live ClickUp boards that should have an Editor but don't (has ad spend, edit
+ * finished, or past the brief stage). Independent of the selected month: it's the current state of ClickUp.
+ */
+function MissingEditorsGroup() {
+  const [data, setData] = useState<{ tasks: MissingTask[]; month: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [why, setWhy] = useState<'all' | MissingReason>('all');
+  useEffect(() => {
+    fetch('/api/missing-editors', { cache: 'no-store' }).then(r => r.json()).then(j => (j.error ? setError(j.error) : setData(j))).catch(e => setError(String(e)));
+  }, []);
+  if (error) return <section className="rgroup"><p className="hint">Couldn&apos;t load tasks missing an editor: {error}</p></section>;
+  if (!data) return null;
+  const rows = data.tasks.filter(t => why === 'all' || t.reasons.includes(why));
+  const count = (r: MissingReason) => data.tasks.filter(t => t.reasons.includes(r)).length;
+  const download = () => {
+    const lines = [['Task name', 'Task link', 'Board', 'Status', 'Brief ID', 'Why listed', 'Ad spend all time (USD)', `Ad spend ${data.month} (USD)`, 'Edit finished', 'Created'],
+      ...rows.map(t => [t.name, t.url, t.board, t.status, t.briefId, t.reasons.map(r => MISSING_REASON[r]).join(' + '), t.spend.toFixed(2), t.spendMonth.toFixed(2), t.finished, t.created])];
+    const url = URL.createObjectURL(new Blob(['\ufeff' + lines.map(r => r.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `tasks-missing-editor-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <section className="rgroup">
+      <button className="rhead" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <h3>{open ? '▾' : '▸'} Tasks missing an editor <span className="count">{data.tasks.length}</span></h3>
+        <span className="rsum">{money(data.tasks.reduce((a, t) => a + t.spend, 0))} all-time spend</span>
+      </button>
+      <div className="rbar">
+        <p className="hint">ClickUp tasks on live boards with an empty Editor field that should have one: they have ad spend, a finished edit, or are past the brief stage. Set the Editor in ClickUp and they drop off after the next sync.</p>
+        <button className="btn-ghost small" onClick={download}>⬇ Download CSV ({rows.length} tasks)</button>
+      </div>
+      {open && (
+        <>
+          <div className="seg small" role="tablist" aria-label="Why listed" style={{ margin: '4px 0 10px' }}>
+            {(['all', 'spend', 'finished', 'in_progress'] as const).map(k => (
+              <button key={k} role="tab" aria-selected={why === k} className={why === k ? 'on' : ''} onClick={() => setWhy(k)}>
+                {k === 'all' ? `All ${data.tasks.length}` : `${MISSING_REASON[k]} ${count(k)}`}
+              </button>
+            ))}
+          </div>
+          <div className="scroll">
+            <table>
+              <thead><tr><th>ClickUp task</th><th>Board</th><th>Status</th><th>Brief</th><th>Why</th><th className="r">Ad spend</th></tr></thead>
+              <tbody>
+                {rows.slice(0, 300).map(t => (
+                  <tr key={t.taskId}>
+                    <td className="adname"><a href={t.url} target="_blank" rel="noreferrer">{t.name}</a></td>
+                    <td className="detail">{t.board}</td>
+                    <td className="detail">{t.status ?? '—'}</td>
+                    <td className="mono">{t.briefId ?? '—'}</td>
+                    <td className="detail">{t.reasons.map(r => MISSING_REASON[r]).join(', ')}</td>
+                    <td className="r">{t.spend ? money(t.spend) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length > 300 && <p className="hint">Showing 300 of {rows.length}; the CSV has all of them.</p>}
+          </div>
+        </>
+      )}
+    </section>
+  );
 }
 
 const fmtDate = (ymd: string) =>
