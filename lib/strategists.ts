@@ -11,7 +11,7 @@
 import { cfg } from './config';
 import { addDays, nextMonth } from './dates';
 import { viewChannels, type ChannelView } from './channels';
-import { PERSON_BY_EMAIL, PODS, podOf, type Strategist } from './pods';
+import { PEOPLE, PERSON_BY_EMAIL, PODS, podOf, type Strategist } from './pods';
 import type { EditorRef, WinnerAd } from './types';
 
 export type StrategistRow = {
@@ -54,8 +54,11 @@ export async function buildStrategists(month: string, view: ChannelView = 'meta'
   const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: opts.agency ?? cfg.agencyCredit });
   const emailOf = new Map((usersKv?.users ?? []).map(u => [`u:${u.id}`, u.hash]));
   // A ClickUp Strategist user -> the pod person with that email, else their own row
+  const norm = (n: string) => n.normalize('NFD').replace(/[^a-zA-Z ]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const byName = new Map(Object.values(PEOPLE).map(p => [norm(p.name), p]));
   const fromClickUp = (e: EditorRef): Who => {
-    const p = PERSON_BY_EMAIL.get(emailOf.get(e.key) ?? '');
+    // by email hash, else by the same full name (some people use a different email in ClickUp)
+    const p = PERSON_BY_EMAIL.get(emailOf.get(e.key) ?? '') ?? byName.get(norm(e.name));
     return p ? fromPod(p) : { key: e.key, name: e.name, group: 'ClickUp only', active: true };
   };
   const podsOf = new Map<string, Set<number>>();
