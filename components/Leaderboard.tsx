@@ -90,6 +90,11 @@ export default function Leaderboard() {
 
   useEffect(() => { const id = setInterval(() => tick(t => t + 1), 30_000); return () => clearInterval(id); }, []);
   useEffect(() => {
+    const onHash = () => setViewState(readHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  useEffect(() => {
     setViewState(readHash());
   }, []);
 
