@@ -472,3 +472,36 @@ export async function timeInStatus(ids: string[], workspace: Workspace): Promise
   }
   return out;
 }
+
+// ------------------------------------------------------------------ audit helpers (read-only, live from ClickUp)
+
+const AGENCY_EDITOR_FIELD_ID = process.env.CLICKUP_AGENCY_EDITOR_FIELD_ID || '2fe8880e-7427-4cea-977c-5e190a6ec358';
+
+/**
+ * Live from ClickUp: every task (Resilia + agency workspace) with this user in the Editor field, updated since
+ * `sinceMs`, mirrored the same way as the sync. Used to re-count finished edits without the dashboard's copy.
+ */
+export async function liveEditorTasks(userId: number, sinceMs: number): Promise<MirroredTask[]> {
+  const out: MirroredTask[] = [];
+  const spaces: { ws: Workspace; team: string; field: string }[] = [{ ws: 'resilia', team: cfg.cu.teamId, field: EDITOR_FIELD_ID }];
+  if (agencyToken()) spaces.push({ ws: 'agency', team: AGENCY_TEAM_ID, field: AGENCY_EDITOR_FIELD_ID });
+  for (const sp of spaces) {
+    for (let page = 0; page < 40; page++) {
+      const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', page: String(page), date_updated_gt: String(sinceMs),
+        custom_fields: JSON.stringify([{ field_id: sp.field, operator: 'ANY', value: [userId] }]) });
+      const res = sp.ws === 'agency' ? await agencyFetch(`/team/${sp.team}/task?${params}`) : await cuFetch(`/team/${sp.team}/task?${params}`);
+      if (!res.ok) throw new Error(`ClickUp ${sp.ws} ${res.status}: ${(await res.text()).slice(0, 160)}`);
+      const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
+      for (const t of body.tasks ?? []) { const m = mirror(t, sp.ws); if (m.editors.some(e => e.id === userId)) out.push(m); }
+      if (body.last_page !== false || !(body.tasks ?? []).length) break;
+    }
+  }
+  return out;
+}
+
+/** Live from ClickUp: one task's Editor field (ids), in either workspace */
+export async function liveTaskEditors(taskId: string, workspace: Workspace): Promise<number[] | null> {
+  const res = workspace === 'agency' ? await agencyFetch(`/task/${taskId}`) : await cuFetch(`/task/${taskId}`);
+  if (!res.ok) return null;
+  return mirror((await res.json()) as CuTaskFull, workspace).editors.map(e => e.id);
+}

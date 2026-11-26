@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { agencyAccessCheck, agencyToken, timeInStatus, workspaceUsers, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
+import { agencyAccessCheck, agencyToken, liveEditorTasks, liveTaskEditors, timeInStatus, workspaceUsers, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
 import * as store from '@/lib/store';
 import { q } from '@/lib/db';
 import { emailHash } from '@/lib/pods';
@@ -76,6 +76,68 @@ export async function GET(req: Request) {
     for (const r of rows) if (r.agency) for (const n of r.agency.split(' / ')) byAgencyEditor[n] = Math.round((byAgencyEditor[n] ?? 0) + r.spend / r.agency.split(' / ').length);
     return NextResponse.json({ month, briefs: rows.length, summary, byAgencyEditor: Object.entries(byAgencyEditor).sort((a, b) => b[1] - a[1]),
       sample: rows.slice(0, 25) });
+  }
+  // ?diag=capaudit&ids=1,2&month=YYYY-MM : read-only audit. Each editor's finished edits in the month, re-counted LIVE
+  // from ClickUp (Editor field, Edit Complete or Asset Delivered date, Pakistan time) vs the dashboard's task mirror.
+  if (url.searchParams.get('diag') === 'capaudit') {
+    await store.ensureTaskTables();
+    const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7);
+    const ids = (url.searchParams.get('ids') ?? '').split(',').map(Number).filter(Boolean);
+    const pk = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+    const since = Date.parse(`${month}-01T00:00:00Z`) - 2 * 864e5;
+    const out = [];
+    for (const id of ids) {
+      if (Date.now() - started > 270_000) { out.push({ id, skipped: 'time budget' }); continue; }
+      try {
+        const live = (await liveEditorTasks(id, since)).filter(t => { const d = t.editDone ?? t.delivered; return d != null && pk(d).startsWith(month); });
+        const mirror = await q<{ task_id: string }>(
+          `SELECT task_id FROM cu_tasks WHERE $1::bigint = ANY(editor_ids)
+              AND to_char((COALESCE(edit_done, delivered) AT TIME ZONE 'Asia/Karachi')::date, 'YYYY-MM') = $2`, [id, month]);
+        const L = new Set(live.map(t => t.taskId)), M = new Set(mirror.map(r => r.task_id));
+        out.push({ id, live: L.size, dashboard: M.size, missingFromDashboard: [...L].filter(x => !M.has(x)), extraOnDashboard: [...M].filter(x => !L.has(x)) });
+      } catch (e) { out.push({ id, error: e instanceof Error ? e.message : String(e) }); }
+    }
+    return NextResponse.json({ month, results: out, ms: Date.now() - started });
+  }
+  // ?diag=briefaudit&month=YYYY-MM&live=60 : read-only audit. Every brief with spend: its ClickUp task and Editor in the
+  // dashboard's lookup table vs the task mirror; the top `live` briefs by spend are also checked live against ClickUp.
+  if (url.searchParams.get('diag') === 'briefaudit') {
+    await store.ensureTaskTables();
+    const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7);
+    const liveN = Math.min(150, Number(url.searchParams.get('live') ?? 60));
+    const rows = await q<{ brief_id: string; spend: number; status: string | null; task_id: string | null; task_name: string | null;
+      map_eds: number[] | null; mirror_eds: number[] | null; mirror_brief: string | null; in_mirror: boolean }>(
+      `WITH sp AS (
+         SELECT b AS brief_id, sum(a.spend / jsonb_array_length(a.brief_ids))::float spend
+           FROM ad_spend a, jsonb_array_elements_text(a.brief_ids) b
+          WHERE a.spend_date >= ($1 || '-01')::date AND a.spend_date < (($1 || '-01')::date + interval '1 month') GROUP BY 1)
+       SELECT sp.brief_id, sp.spend, m.status, m.task_id, m.task_name,
+              ARRAY(SELECT (e->>'key') FROM jsonb_array_elements(COALESCE(m.editors, '[]')) e) AS map_eds_raw,
+              (SELECT array_agg(x ORDER BY x) FROM unnest(t.editor_ids) x) mirror_eds, t.brief_id mirror_brief, t.task_id IS NOT NULL in_mirror
+         FROM sp LEFT JOIN brief_map m ON m.brief_id = sp.brief_id LEFT JOIN cu_tasks t ON t.task_id = m.task_id
+        ORDER BY sp.spend DESC`, [month]);
+    type R = typeof rows[number] & { map_eds_raw?: string[] };
+    const ids = (r: R) => (r.map_eds_raw ?? []).map(k => Number(String(k).replace(/^u:/, ''))).filter(Boolean).sort((a, b) => a - b);
+    const ok = rows.filter(r => r.status === 'ok') as R[];
+    const viaResize = (r: R) => (r.task_name ?? '').startsWith('Via resize');
+    const mismatch = ok.filter(r => !viaResize(r) && r.in_mirror && JSON.stringify(ids(r)) !== JSON.stringify((r.mirror_eds ?? []).map(Number)));
+    const notInMirror = ok.filter(r => !viaResize(r) && !r.in_mirror);
+    const liveChecks = [];
+    for (const r of ok.filter(x => !viaResize(x) && x.task_id).slice(0, liveN)) {
+      if (Date.now() - started > 270_000) break;
+      const live = await liveTaskEditors(r.task_id!, 'resilia');
+      const want = ids(r);
+      liveChecks.push({ brief: r.brief_id, spend: Math.round(r.spend), task: r.task_id, live: live?.sort((a, b) => a - b) ?? null, dashboard: want,
+        match: live != null && JSON.stringify(live) === JSON.stringify(want) });
+    }
+    const sum = (xs: R[]) => Math.round(xs.reduce((a, r) => a + r.spend, 0));
+    return NextResponse.json({
+      month, briefs: rows.length, byStatus: Object.fromEntries([...new Set(rows.map(r => r.status ?? 'none'))].map(s => [s, { briefs: rows.filter(r => (r.status ?? 'none') === s).length, spend: sum(rows.filter(r => (r.status ?? 'none') === s) as R[]) }])),
+      editorMismatchVsMirror: { count: mismatch.length, spend: sum(mismatch), sample: mismatch.slice(0, 25).map(r => ({ brief: r.brief_id, spend: Math.round(r.spend), task: r.task_id, dashboard: ids(r), mirror: r.mirror_eds })) },
+      taskNotInMirror: { count: notInMirror.length, spend: sum(notInMirror), sample: notInMirror.slice(0, 15).map(r => ({ brief: r.brief_id, task: r.task_id })) },
+      live: { checked: liveChecks.length, mismatches: liveChecks.filter(c => !c.match) },
+      ms: Date.now() - started,
+    });
   }
   // ?diag=edits&id=<clickup user>&month=YYYY-MM : every task counted as that person's finished edit in the month (read-only)
   if (url.searchParams.get('diag') === 'edits') {
