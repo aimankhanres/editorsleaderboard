@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
-import { agencyAccessCheck, agencyToken, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
+import { agencyAccessCheck, agencyToken, workspaceUsers, editorTasksPage, RateLimited, streamTasksPage, type MirrorStream } from '@/lib/clickup';
 import * as store from '@/lib/store';
 import { q } from '@/lib/db';
+import { emailHash } from '@/lib/pods';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -123,5 +124,15 @@ export async function GET(req: Request) {
     if (Date.now() - started >= BUDGET_MS) break;
   }
   const caughtUp = streams.every(s => report[s]?.caughtUp);
+  // Workspace members with emails (to match ClickUp Strategist users to the pod list), refreshed once a day
+  const users = await store.kvGet<{ at: number }>('cu_users');
+  if (!users || Date.now() - users.at > 864e5 || url.searchParams.get('users')) {
+    try {
+      // Only a one-way hash of each email is kept (enough to match people to the pod list)
+      const list = await workspaceUsers();
+      const hashed = await Promise.all(list.map(async u => ({ id: u.id, name: u.name, hash: u.email ? await emailHash(u.email) : null })));
+      await store.kvSet('cu_users', { at: Date.now(), users: hashed });
+    } catch (e) { console.error('users', e); }
+  }
   return NextResponse.json({ ok: true, caughtUp, rateLimited, report, ...(await store.cuTaskStats()), ms: Date.now() - started });
 }

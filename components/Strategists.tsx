@@ -40,7 +40,7 @@ export default function Strategists() {
         <div>
           <div className="crumb">Attribution</div>
           <h1>Strategists</h1>
-          <p className="sub">Spend on ads credited to editors, credited again to the brief&apos;s <strong>Strategist</strong> in ClickUp</p>
+          <p className="sub">The <strong>pod in the ad name</strong> decides the strategist (shared pods split evenly); ads with no pod fall back to the ClickUp <strong>Strategist</strong> field</p>
         </div>
       </header>
       <PeriodBar value={period} months={data?.months ?? [period.month]} onChange={setPeriod} min={data?.dataFrom} max={data?.dataTo} />
@@ -50,10 +50,10 @@ export default function Strategists() {
       {data && (
         <>
           <section className="stats">
-            <Stat label="Credited to strategists" value={money(data.withStrategist)} sub={`of ${money(data.attributed)} credited to editors`} />
-            <Stat label="Strategists" value={`${data.strategists.length}`} sub={`${briefs} briefs with spend`} />
-            <Stat label="Winners" value={`${winners}`} sub={`ads over ${money(data.winnerSpend)}`} accent />
-            <Stat label="No strategist set" value={money(data.noStrategist.spend)} sub={`${data.noStrategist.briefs} credited briefs without one`} warn={data.noStrategist.spend > 0} />
+            <Stat label="Credited to strategists" value={money(data.withStrategist)} sub={`${data.total ? Math.round((data.withStrategist / data.total) * 100) : 0}% of ${money(data.total)} spend`} />
+            <Stat label="From ad-name pods" value={money(data.byPod)} sub={`ClickUp Strategist field: ${money(data.byClickUp)}`} />
+            <Stat label="Winners" value={`${winners}`} sub={`ads over ${money(data.winnerSpend)} · ${data.strategists.length} strategists`} accent />
+            <Stat label="No strategist" value={money(data.noStrategist.spend)} sub={`${data.noStrategist.ads} ads with no pod and no ClickUp Strategist`} warn={data.noStrategist.spend > 0} />
           </section>
 
           <section className="controls cap-controls">
@@ -73,9 +73,12 @@ export default function Strategists() {
             </table>
             {!rows.length && <div className="empty">{q ? `Nobody matches “${query}”.` : 'No strategist spend in this period yet.'}</div>}
           </div>
+          {data.unknownPods.length > 0 && (
+            <div className="banner soft">Pods in ad names that aren&apos;t in the pod list (credited through ClickUp instead): {data.unknownPods.slice(0, 8).map(u => `Pod ${u.pod} (${money(u.spend)})`).join(', ')}</div>
+          )}
           <p className="cap-foot">
-            Only spend already credited to an editor counts (the ClickUp task was found and has an Editor). A task with two strategists splits
-            its spend between them, like two editors. Winner = an ad with {money(data.winnerSpend)}+ spend in the period.
+            A pod in the ad name wins (Pod10 = David + Farwa splits 50/50). Ads with no pod use the ClickUp Strategist field (for agency briefs, the
+            original agency task&apos;s). Every ad counts, with or without a brief ID or an editor. Winner = an ad with {money(data.winnerSpend)}+ spend in the period.
           </p>
         </>
       )}
@@ -92,7 +95,8 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
         <td>
           <div className="who-cell">
             <span className="avatar strat" style={{ width: 32, height: 32, fontSize: 12 }}>{initials(s.name)}</span>
-            <div><div className="name">{s.name}</div><div className="role">{s.products.join(' · ') || '—'}</div></div>
+            <div><div className="name">{s.name}{!s.active && <span className="chip" style={{ marginLeft: 6 }}>inactive</span>}</div>
+              <div className="role">{s.group}{s.pods.length ? ` · Pod ${s.pods.join(', ')}` : ''}{s.products.length ? ` · ${s.products.join(', ')}` : ''}</div></div>
           </div>
         </td>
         <td className="r money-cell">{money(s.spend)}</td>
@@ -107,7 +111,9 @@ function Row({ s, i, top, open, onToggle }: { s: StrategistRow; i: number; top: 
         <tr className="dsub"><td colSpan={9}>
           <div className="board-split">
             <div className="bs-item">
-              <div className="bs-h"><span>Editors on their briefs</span></div>
+              <div className="bs-h"><span>Where the spend came from</span></div>
+              <ul className="mini-list"><li><span>Pod in the ad name</span><b>{money(s.podSpend)}</b></li><li><span>ClickUp Strategist field</span><b>{money(s.clickupSpend)}</b></li></ul>
+              <div className="bs-h" style={{ marginTop: 12 }}><span>Editors on their ads</span></div>
               <ul className="mini-list">{s.editors.map(e => <li key={e.name}><span>{e.name}</span><b>{money(e.spend)}</b></li>)}</ul>
             </div>
             <div className="bs-item" style={{ gridColumn: 'span 2' }}>

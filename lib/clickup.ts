@@ -428,3 +428,21 @@ export async function agencyAccessCheck(): Promise<Record<string, unknown>> {
   const u = user.body?.user as { username?: string } | undefined;
   return { configured: true, tokenUser: u?.username ?? `HTTP ${user.status}`, workspaces: out };
 }
+
+// ------------------------------------------------------------------ workspace members (emails, read-only)
+
+export type CuUser = { id: number; name: string; email: string | null };
+/** Every member of Resilia's workspace and (with the agency token) the agency workspace, with their email */
+export async function workspaceUsers(): Promise<CuUser[]> {
+  const out = new Map<number, CuUser>();
+  for (const token of [cfg.cu.token, agencyToken()].filter(Boolean)) {
+    const res = await fetch(`${BASE}/team`, { headers: { Authorization: token }, cache: 'no-store', signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) continue;
+    const body = (await res.json()) as { teams?: { members?: { user?: { id: number; username?: string; email?: string } }[] }[] };
+    for (const t of body.teams ?? []) for (const m of t.members ?? []) {
+      const u = m.user;
+      if (u?.id && !out.has(u.id)) out.set(u.id, { id: Number(u.id), name: u.username || u.email || `User ${u.id}`, email: u.email?.toLowerCase() ?? null });
+    }
+  }
+  return [...out.values()];
+}
