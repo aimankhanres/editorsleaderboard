@@ -475,7 +475,32 @@ export async function timeInStatus(ids: string[], workspace: Workspace): Promise
 
 // ------------------------------------------------------------------ audit helpers (read-only, live from ClickUp)
 
-const AGENCY_EDITOR_FIELD_ID = process.env.CLICKUP_AGENCY_EDITOR_FIELD_ID || '2fe8880e-7427-4cea-977c-5e190a6ec358';
+
+/**
+ * Live from ClickUp: every task (Resilia + agency workspace) with this user in the Editor field, updated since
+ * `sinceMs`, mirrored the same way as the sync. Used to re-count finished edits without the dashboard's copy.
+ */
+const agencyLiveCache = new Map<number, Promise<MirroredTask[]>>();
+/** Live: every agency-workspace task updated since `sinceMs` (the agency workspace rejects Editor-field filters) */
+function agencyTasksSince(sinceMs: number): Promise<MirroredTask[]> {
+  let p = agencyLiveCache.get(sinceMs);
+  if (!p) {
+    p = (async () => {
+      const out: MirroredTask[] = [];
+      for (let page = 0; page < 200; page++) {
+        const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', page: String(page), date_updated_gt: String(sinceMs) });
+        const res = await agencyFetch(`/team/${AGENCY_TEAM_ID}/task?${params}`);
+        if (!res.ok) throw new Error(`ClickUp agency ${res.status}: ${(await res.text()).slice(0, 160)}`);
+        const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
+        for (const t of body.tasks ?? []) out.push(mirror(t, 'agency'));
+        if (body.last_page !== false || !(body.tasks ?? []).length) break;
+      }
+      return out;
+    })();
+    agencyLiveCache.set(sinceMs, p);
+  }
+  return p;
+}
 
 /**
  * Live from ClickUp: every task (Resilia + agency workspace) with this user in the Editor field, updated since
@@ -483,19 +508,16 @@ const AGENCY_EDITOR_FIELD_ID = process.env.CLICKUP_AGENCY_EDITOR_FIELD_ID || '2f
  */
 export async function liveEditorTasks(userId: number, sinceMs: number): Promise<MirroredTask[]> {
   const out: MirroredTask[] = [];
-  const spaces: { ws: Workspace; team: string; field: string }[] = [{ ws: 'resilia', team: cfg.cu.teamId, field: EDITOR_FIELD_ID }];
-  if (agencyToken()) spaces.push({ ws: 'agency', team: AGENCY_TEAM_ID, field: AGENCY_EDITOR_FIELD_ID });
-  for (const sp of spaces) {
-    for (let page = 0; page < 40; page++) {
-      const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', page: String(page), date_updated_gt: String(sinceMs),
-        custom_fields: JSON.stringify([{ field_id: sp.field, operator: 'ANY', value: [userId] }]) });
-      const res = sp.ws === 'agency' ? await agencyFetch(`/team/${sp.team}/task?${params}`) : await cuFetch(`/team/${sp.team}/task?${params}`);
-      if (!res.ok) throw new Error(`ClickUp ${sp.ws} ${res.status}: ${(await res.text()).slice(0, 160)}`);
-      const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
-      for (const t of body.tasks ?? []) { const m = mirror(t, sp.ws); if (m.editors.some(e => e.id === userId)) out.push(m); }
-      if (body.last_page !== false || !(body.tasks ?? []).length) break;
-    }
+  for (let page = 0; page < 40; page++) {
+    const params = new URLSearchParams({ include_closed: 'true', subtasks: 'true', page: String(page), date_updated_gt: String(sinceMs),
+      custom_fields: JSON.stringify([{ field_id: EDITOR_FIELD_ID, operator: 'ANY', value: [userId] }]) });
+    const res = await cuFetch(`/team/${cfg.cu.teamId}/task?${params}`);
+    if (!res.ok) throw new Error(`ClickUp ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const body = (await res.json()) as { tasks?: CuTaskFull[]; last_page?: boolean };
+    for (const t of body.tasks ?? []) { const m = mirror(t, 'resilia'); if (m.editors.some(e => e.id === userId)) out.push(m); }
+    if (body.last_page !== false || !(body.tasks ?? []).length) break;
   }
+  if (agencyToken()) out.push(...(await agencyTasksSince(sinceMs)).filter(t => t.editors.some(e => e.id === userId)));
   return out;
 }
 
