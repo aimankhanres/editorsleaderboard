@@ -50,6 +50,27 @@ export async function GET(req: Request) {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
     return NextResponse.json({ adNamesChanged: await store.reextractBriefIds() });
   }
+  // ?diag=attribaudit&month=YYYY-MM : read-only. Every dollar of the month is either credited or in Needs review, and the
+  // editors' credit adds up to credited + the agency/resize double credit. Both channels.
+  if (url.searchParams.get('diag') === 'attribaudit') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    const m = url.searchParams.get('month') ?? month;
+    const ads = await store.loadMonthAds(m, null);
+    const briefs = await store.loadBriefMap([...new Set(ads.flatMap(a => a.briefIds))], { agency: cfg.agencyCredit });
+    const alloc = allocate(ads, briefs, await store.loadRoster());
+    const dbTotal = await q<{ t: number; n: number }>(`SELECT COALESCE(sum(spend), 0)::float t, COUNT(DISTINCT ad_id)::int n FROM ad_spend WHERE to_char(spend_date, 'YYYY-MM') = $1`, [m]);
+    const review = alloc.review.filter(r => r.kind !== 'name_mismatch');
+    const reviewSum = review.reduce((a, r) => a + r.spend, 0);
+    const editorsSum = alloc.editors.reduce((a, e) => a + e.spend, 0);
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return NextResponse.json({
+      month: m, ads: ads.length, dbAds: dbTotal[0].n,
+      total: alloc.total, dbTotal: r2(dbTotal[0].t), credited: alloc.attributed, needsReview: r2(reviewSum),
+      creditedPlusReview: r2(alloc.attributed + reviewSum), gapTotalVsCreditedPlusReview: r2(alloc.total - alloc.attributed - reviewSum),
+      editorsSum: r2(editorsSum), overlap: alloc.overlap, gapEditorsVsCreditedPlusOverlap: r2(editorsSum - alloc.attributed - alloc.overlap),
+      reviewByKind: Object.fromEntries([...new Set(review.map(r => r.kind))].map(k => [k, r2(review.filter(r => r.kind === k).reduce((a, r) => a + r.spend, 0))])),
+    });
+  }
   // ?diag=reconcile&from=&to= : read-only. Per day and channel: Triple Whale ads + spend vs what ad_spend holds.
   if (url.searchParams.get('diag') === 'reconcile') {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });

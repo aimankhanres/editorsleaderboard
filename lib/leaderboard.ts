@@ -18,6 +18,8 @@ export type Allocation = {
   review: ReviewItem[];
   /** Dollars credited to at least one roster editor in each scope, each dollar counted ONCE (for "All …" totals) */
   scopeSpend: ScopeSpend;
+  /** Spend credited to two people at once (agency editor + resize editor): editors' sum = attributed + overlap */
+  overlap: number;
 };
 /** all / internal / agency, plus one key per team group (Resizing, Iterations, Internal, Variations, Agency) */
 export type ScopeSpend = Record<string, number>;
@@ -54,6 +56,7 @@ export function allocate(
   let total = 0;
   let attributed = 0;
   const scopeSpend: ScopeSpend = { internal: 0, agency: 0 };
+  let overlap = 0;
 
   // Ad-name cross-check: only the editors on the team lists (lib/teams.ts). First name, plus a nickname
   // written in brackets, e.g. "Lucylen (Lucy) Pagado" matches "Lucylen" and "Lucy".
@@ -131,7 +134,7 @@ export function allocate(
         landed(agencyEds, agencyInfo, scopes);
         if (resizeOk) landed(info.editors, info, scopes);
         countScopes();
-        if (!resizeOk) attributed += share;
+        if (!resizeOk) attributed += share; else overlap += share;
         agencyEds.forEach(e => { creditedKeys.add(e.key); for (const t of tokens(e.name)) creditedTokens.add(t); });
         if (!resizeOk) continue;
       }
@@ -195,6 +198,7 @@ export function allocate(
   review.sort((a, b) => b.spend - a.spend);
   return { total: round2(total), attributed: round2(attributed), editors, review: review.map(r => ({ ...r, spend: round2(r.spend) })),
     // All = every credited dollar (people not on a team list too); Internal / Agency = only people on those teams
+    overlap: round2(overlap),
     scopeSpend: { ...Object.fromEntries(Object.entries(scopeSpend).map(([k, v]) => [k, round2(v)])), all: round2(attributed) } };
 }
 
