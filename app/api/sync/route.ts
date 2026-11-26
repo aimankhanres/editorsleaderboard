@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { addDays, monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
-import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
+import { adTotals, adsOnDay, dailyTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
 import { PODS, podOf } from '@/lib/pods';
 import { CHANNELS } from '@/lib/channels';
 import { q } from '@/lib/db';
@@ -28,8 +28,11 @@ export async function GET(req: Request) {
 
   const today = todayIn(cfg.timezone);
   const month = monthOf(today);
-  const months = Number(today.slice(8, 10)) <= 3 ? [prevMonth(month), month] : [month];
-  const from = monthStart(months[0]);
+  // ?days=YYYY-MM-DD:YYYY-MM-DD : backfill exactly those days (e.g. an earlier month, a few days per run)
+  const days = url.searchParams.get('days')?.match(/^(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/);
+  const months = days ? [...new Set([monthOf(days[1]), monthOf(days[2])])]
+    : Number(today.slice(8, 10)) <= 3 ? [prevMonth(month), month] : [month];
+  const from = days ? days[1] : monthStart(months[0]);
 
   // ?diag=1 : run variants of the Triple Whale query to see which parts the API accepts. Writes nothing.
   if (url.searchParams.get('diag') === 'clickup') return NextResponse.json(await clickupCheck(url.searchParams.get('brief') || 'AOG-10150'));
@@ -46,6 +49,37 @@ export async function GET(req: Request) {
   if (url.searchParams.get('reextract')) {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
     return NextResponse.json({ adNamesChanged: await store.reextractBriefIds() });
+  }
+  // ?diag=reconcile&from=&to= : read-only. Per day and channel: Triple Whale ads + spend vs what ad_spend holds.
+  if (url.searchParams.get('diag') === 'reconcile') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    const from = url.searchParams.get('from')!, to = url.searchParams.get('to')!;
+    const out: Record<string, unknown>[] = [];
+    for (const ch of CHANNELS) {
+      const tw = await dailyTotals(ch.tw, ch.campaignTypes, from, to);
+      const db = await q<{ day: string; ads: number; spend: number }>(
+        `SELECT to_char(spend_date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS ads, SUM(spend)::float AS spend
+           FROM ad_spend WHERE channel = $1 AND spend_date BETWEEN $2::date AND $3::date GROUP BY 1`, [ch.tw, from, to]);
+      const dbBy = new Map(db.map(r => [r.day, r]));
+      const daysAll = [...new Set([...tw.map(r => r.day), ...db.map(r => r.day)])].sort();
+      for (const d of daysAll) {
+        const t = tw.find(r => r.day === d), b = dbBy.get(d);
+        out.push({ channel: ch.id, day: d, twAds: t?.ads ?? 0, dbAds: b?.ads ?? 0, twSpend: t?.spend ?? 0, dbSpend: Math.round((b?.spend ?? 0) * 100) / 100 });
+      }
+    }
+    return NextResponse.json(out);
+  }
+  // ?diag=reconcileday&day=&channel=meta|google : read-only. Ad-by-ad differences for one day.
+  if (url.searchParams.get('diag') === 'reconcileday') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    const day = url.searchParams.get('day')!, ch = CHANNELS.find(c => c.id === url.searchParams.get('channel')) ?? CHANNELS[0];
+    const tw = await adsOnDay(ch.tw, ch.campaignTypes, day);
+    const db = await q<{ ad_id: string; spend: number }>(`SELECT ad_id, spend::float spend FROM ad_spend WHERE channel = $1 AND spend_date = $2::date`, [ch.tw, day]);
+    const dbBy = new Map(db.map(r => [r.ad_id.replace(/^g:/, ''), r.spend]));
+    const twBy = new Map(tw.map(r => [r.adId, r]));
+    const diffs = [...new Set([...twBy.keys(), ...dbBy.keys()])].map(id => ({ adId: id, name: twBy.get(id)?.name ?? '', tw: twBy.get(id)?.spend ?? 0, db: dbBy.get(id) ?? 0 }))
+      .filter(r => Math.abs(r.tw - r.db) >= 0.005);
+    return NextResponse.json({ day, channel: ch.id, twAds: tw.length, dbAds: db.length, diffs: diffs.slice(0, 200), diffCount: diffs.length });
   }
   // ?diag=pods&from=YYYY-MM-DD&to=YYYY-MM-DD : read-only reconciliation. Spend per pod (from ad names) straight from
   // Triple Whale vs what the dashboard has stored in ad_spend for the same days and channels. Writes nothing.
@@ -170,7 +204,8 @@ export async function GET(req: Request) {
     // month, so each run fetches the last 3 days (Triple Whale still revises those) plus 3 older days in rotation
     // (every older day is refreshed several times a day). ?full=1 refetches everything.
     const rows: Awaited<ReturnType<typeof fetchAdSpend>> = [];
-    for (const [a, b] of syncWindows(from, today, url.searchParams.get('full') === '1')) rows.push(...await fetchAdSpend(a, b));
+    const windows = days ? [[days[1], days[2]] as [string, string]] : syncWindows(from, today, url.searchParams.get('full') === '1');
+    for (const [a, b] of windows) rows.push(...await fetchAdSpend(a, b));
     await store.upsertAdSpend(rows);
     ads = new Set(rows.map(r => r.adId)).size;
 

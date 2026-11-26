@@ -182,3 +182,43 @@ LIMIT ${PAGE} OFFSET ${offset}`);
   }
   return out;
 }
+
+/**
+ * Audit (read-only): per day, the number of ads with spend and their spend, rounded to the cent per ad per day exactly
+ * as stored (ad_spend keeps numeric(14,2)). Same filters as the sync: ad level, non-empty ad id, non-zero spend.
+ */
+export async function dailyTotals(channel: string, campaignTypes: string[] | null, from: string, to: string) {
+  const rows = await runQuery<{ d: string; n: number | string; t: number | string }>(from, to, `
+SELECT toString(x.dd) AS d, count() AS n, sum(round(x.s, 2)) AS t
+FROM (
+  SELECT a.event_date AS dd, a.ad_id AS aid, SUM(a.spend) AS s
+  FROM ads_table a
+  WHERE a.event_date BETWEEN @startDate AND @endDate
+    AND a.channel = ${sqlString(channel)}${campaignTypes ? `
+    AND a.campaign_type IN (${campaignTypes.map(sqlString).join(', ')})` : ''}
+    AND a.ad_id IS NOT NULL AND a.ad_id != ''
+  GROUP BY a.event_date, a.ad_id
+  HAVING SUM(a.spend) != 0
+) x
+GROUP BY x.dd
+ORDER BY d`);
+  return rows.map(r => ({ day: String(r.d).slice(0, 10), ads: Number(r.n), spend: Math.round(Number(r.t) * 100) / 100 }));
+}
+
+/** Audit (read-only): every ad's spend on one day, rounded to the cent */
+export async function adsOnDay(channel: string, campaignTypes: string[] | null, day: string) {
+  const out: { adId: string; name: string; spend: number }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await runQuery<{ ad: string; name: string | null; s: number | string }>(day, day, `
+SELECT toString(a.ad_id) AS ad, any(a.ad_name) AS name, round(SUM(a.spend), 2) AS s
+FROM ads_table a
+WHERE a.event_date BETWEEN @startDate AND @endDate AND a.channel = ${sqlString(channel)}${campaignTypes ? `
+  AND a.campaign_type IN (${campaignTypes.map(sqlString).join(', ')})` : ''}
+  AND a.ad_id IS NOT NULL AND a.ad_id != ''
+GROUP BY a.ad_id HAVING SUM(a.spend) != 0
+ORDER BY ad LIMIT ${PAGE} OFFSET ${offset}`);
+    for (const r of rows) out.push({ adId: String(r.ad), name: r.name ?? '', spend: Number(r.s) });
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
