@@ -3,6 +3,9 @@ import { cfg } from '@/lib/config';
 import { isCronAuthorized } from '@/lib/auth';
 import { addDays, monthOf, monthStart, prevMonth, todayIn } from '@/lib/dates';
 import { adTotals, diagnose, fetchAdSpend, probe } from '@/lib/triplewhale';
+import { PODS, podOf } from '@/lib/pods';
+import { CHANNELS } from '@/lib/channels';
+import { q } from '@/lib/db';
 import { briefsEditedBy, clickupCheck, lookupBriefs } from '@/lib/clickup';
 import { buildLeaderboard } from '@/lib/leaderboard';
 import { TEAMS } from '@/lib/teams';
@@ -43,6 +46,35 @@ export async function GET(req: Request) {
   if (url.searchParams.get('reextract')) {
     if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
     return NextResponse.json({ adNamesChanged: await store.reextractBriefIds() });
+  }
+  // ?diag=pods&from=YYYY-MM-DD&to=YYYY-MM-DD : read-only reconciliation. Spend per pod (from ad names) straight from
+  // Triple Whale vs what the dashboard has stored in ad_spend for the same days and channels. Writes nothing.
+  if (url.searchParams.get('diag') === 'pods') {
+    if (!cfg.hasDb) return NextResponse.json({ error: 'DATABASE_URL not set' }, { status: 500 });
+    const from = url.searchParams.get('from') ?? `${today.slice(0, 7)}-01`, to = url.searchParams.get('to') ?? today;
+    const tw = new Map<number, { spend: number; ads: number }>();
+    let twTotal = 0;
+    for (const ch of CHANNELS) {
+      const rows = await adTotals(ch.tw, from, to);
+      for (const r of rows) {
+        if (ch.campaignTypes && !ch.campaignTypes.includes(String(r.campaignType))) continue;
+        twTotal += r.spend;
+        const pod = podOf(r.adName);
+        if (pod == null) continue;
+        const e = tw.get(pod) ?? { spend: 0, ads: 0 };
+        tw.set(pod, { spend: e.spend + r.spend, ads: e.ads + 1 });
+      }
+    }
+    const stored = await q<{ ad_name: string; spend: number }>(
+      `SELECT max(ad_name) ad_name, sum(spend)::float spend FROM ad_spend WHERE spend_date BETWEEN $1::date AND $2::date GROUP BY ad_id`, [from, to]);
+    const db = new Map<number, number>();
+    let dbTotal = 0;
+    for (const r of stored) { dbTotal += r.spend; const pod = podOf(r.ad_name); if (pod != null) db.set(pod, (db.get(pod) ?? 0) + r.spend); }
+    const pods = [...new Set([...tw.keys(), ...db.keys()])].sort((a, b) => a - b).map(pod => ({
+      pod, people: (PODS[pod] ?? []).map(p => p.name).join(' / ') || null,
+      tripleWhale: Math.round((tw.get(pod)?.spend ?? 0) * 100) / 100, dashboard: Math.round((db.get(pod) ?? 0) * 100) / 100, ads: tw.get(pod)?.ads ?? 0,
+    }));
+    return NextResponse.json({ from, to, tripleWhaleTotal: Math.round(twTotal), dashboardTotal: Math.round(dbTotal), pods });
   }
   // ?diag=channel&channel=google-ads : read-only check of how much of another channel's spend is traceable
   // to briefs/editors, using the brief lookups we already have. Writes nothing.
