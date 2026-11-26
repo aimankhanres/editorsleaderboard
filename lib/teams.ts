@@ -59,7 +59,7 @@ export const TEAMS: Team[] = [
       { id: 106919268, name: 'Rehman Khan', role: RESIZE },
       { id: 106919233, name: 'Manu Bhardwaj', role: 'Video Editor – Resizing' }, // not on the Nov 2026 org chart; added from ClickUp activity (Garlic Resizing)
       // Rips editors (merged into Resizing, Nov 26 2026)
-      { id: 106853409, name: 'Clariz Barrera', role: RESIZE },
+      { id: 106853409, name: 'Clariz Barrera', role: 'Senior Editor – Resizing' },
       { id: 106886777, name: 'Ayyaz Sohail', role: 'Sr. Editor' },
       { id: 106853408, name: 'Cristian Jay Reyes', role: 'Editing Lead – Resizing' },
       { id: 106842654, name: 'Jasmin Marinay', role: RESIZE },
@@ -69,7 +69,7 @@ export const TEAMS: Team[] = [
   {
     id: 'iterations', name: 'Iterations', group: 'Iterations', kpi: KPI_STANDARD, nameCheck: true,
     members: [
-      { id: 106853401, name: 'Damia Tasleem', role: GOOGLE },
+      { id: 106853401, name: 'Damia Tasleem', role: 'Lead Editor – Iterations' },
       { id: 106838067, name: 'Ginika Mary', role: GOOGLE },
       { id: 106884332, name: 'Amna Sajjad', role: 'Editor – Google' }, // "Amna S" in the request
       { id: 106859606, name: 'Konstantin Oberemov', role: GOOGLE },
@@ -379,3 +379,50 @@ export function countsOnTeam(key: string, teamId: string, board: string | null):
   if (board && teams.includes(board)) return board === teamId;
   return teams[0] === teamId;
 }
+
+// ------------------------------------------------------------------ reporting lines (org chart, Direct Manager column)
+
+/**
+ * Who reports to whom, per team, by roster name (Full Roster sheet, Nov 2026). People whose manager is "TBD – assign
+ * senior editor" are not listed; for bonus "Pod quality" a Senior without direct reports covers the unassigned Base
+ * Editors on their team.
+ */
+const REPORTS: Record<string, Record<string, string[]>> = {
+  resizing: {
+    'Michael Roque': ['Usama Mir', 'Aqib Shakeel', 'Dustin Bryan', 'Armand Lladones', 'Lucylen (Lucy) Pagado', 'Jerry Emmanuel', 'Tope Ojomo', 'Neil Dave', 'Jasmin Marinay', 'Lucky Jake Tapayan', 'Clariz Barrera'],
+    'Ayyaz Sohail': ['Haseeb Choudhary', 'Adilbek Sultanov', 'Saif Adam', 'Jay-el Tobias', 'Gagandeep Kumar', 'Vansh Ahluwalia', 'Jude Elega', 'Mian Muhammad Nasir', 'Omer Aayan'],
+    'Cristian Jay Reyes': ['Zamad Khan', 'Thai Anh Tu', 'Muhammad Bilal', 'Yahya Syed', 'Kiran Akash', 'Sidra Nazish', 'Amna Tanveer', 'Arslan Sahabrso', 'Rehman Khan'],
+  },
+  iterations: { 'Damia Tasleem': ['*'] },
+  'garlic-variations': { 'Rovan Legaspi': ['CJ Bugayon', 'Mark Quintana', 'Ezekiel Matias', 'John Henry P. Francisco', 'Joyce Ann Santos', 'Keith Yagyagan', 'Uriel Segura'] },
+  'cin-variations': { 'Mariel Bragado': ['Jason Verceles', 'Mark Romero', 'Jenivive Martin'] },
+  'oregano-agency': {
+    'DJ Bunda': ['Cesar Aviles', 'Huzaifa', 'Rafay Shaikh', 'Adekanmbi Israel Oluwatomiwa', 'Safeer', 'Divine', 'Hammad', 'Robert Phinex'],
+    'Muhammad Khan': ['Devinda Mahasen', 'Javeria Rafiq', 'Jediea Leynes', 'Ahmed Umaru', 'Adaoma Ikeobi', 'Salah Grini', 'Muhammad Bilal', 'Daniel Ferrero'],
+  },
+  'garlic-agency': {
+    'Ahmad Muhmmad Khabir': ['Mohtashim', 'Kevin Puuhlet', 'Ramsha Zia', 'Muhammad Rajal', 'Danielle Anne M. Aserdano', 'Maven Divine', 'Ali Raza 2'],
+    'Ibbad': ['Saifullah Shaikh', 'Maheen Safia', 'Owais Ahmed', 'Miloua Mohammed', 'Ali Raza', 'Analyn Oriel', 'Hassan Murad', 'Muzamil Raza'],
+  },
+};
+
+/** Member keys reporting directly to each manager (by manager member key), across teams */
+export const DIRECT_REPORTS: Map<string, Set<string>> = (() => {
+  const out = new Map<string, Set<string>>();
+  for (const [teamId, managers] of Object.entries(REPORTS)) {
+    const team = TEAMS.find(t => t.id === teamId);
+    if (!team) continue;
+    const byName = (n: string) => team.members.find(m => m.name.toLowerCase() === n.toLowerCase());
+    for (const [mgrName, names] of Object.entries(managers)) {
+      const mgr = byName(mgrName);
+      if (!mgr) continue;
+      const set = out.get(memberKey(mgr)) ?? new Set<string>();
+      const reports = names[0] === '*' ? team.members.filter(m => m !== mgr) : names.map(byName).filter((m): m is TeamMember => !!m);
+      for (const r of reports) set.add(memberKey(r));
+      out.set(memberKey(mgr), set);
+    }
+  }
+  return out;
+})();
+/** Everyone on a team who has a listed manager there */
+export const HAS_MANAGER: Set<string> = new Set([...DIRECT_REPORTS.values()].flatMap(s => [...s]));

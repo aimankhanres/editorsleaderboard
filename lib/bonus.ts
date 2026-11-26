@@ -8,7 +8,7 @@
  */
 import { q } from './db';
 import { addDays, nextMonth, todayIn } from './dates';
-import { TEAMS, boardOf, memberKey, tierOf, type Tier } from './teams';
+import { DIRECT_REPORTS, HAS_MANAGER, TEAMS, boardOf, memberKey, tierOf, type Tier } from './teams';
 import { ensureTaskTables, kvGet } from './store';
 
 const TZ = process.env.CAPACITY_TIMEZONE ?? 'Asia/Karachi';
@@ -19,7 +19,9 @@ export const BONUS_RULES = {
   backlogHours: 24, // work doesn't wait more than a day for Senior / Lead review
   maxRevisions: 2, // quality: edits stay within 2 revision rounds
   revisionStatus: /revision/i,
+  // Senior / Lead review only: Creative Strategist (CS) review is not in the editors' hands
   reviewStatus: /review/i,
+  notReviewStatus: /\bcs\b|strategist|client/i,
 };
 const closePays = (ratio: number) => BONUS_RULES.close.find(c => ratio >= c.atLeast - 1e-9)?.pays ?? 0;
 
@@ -51,7 +53,7 @@ function metric(t: TaskRow): Metric {
   const revStatuses = Object.entries(st).filter(([s, m]) => BONUS_RULES.revisionStatus.test(s) && m > 0);
   const revisions = t.revisions ?? (t.status_time ? revStatuses.length : null);
   const revMin = revStatuses.reduce((a, [, m]) => a + m, 0);
-  const reviewMin = Object.entries(st).filter(([s]) => BONUS_RULES.reviewStatus.test(s)).reduce((a, [, m]) => a + m, 0);
+  const reviewMin = Object.entries(st).filter(([s]) => BONUS_RULES.reviewStatus.test(s) && !BONUS_RULES.notReviewStatus.test(s)).reduce((a, [, m]) => a + m, 0);
   return {
     revisions,
     revPerRound: t.status_time && revMin > 0 ? revMin / Math.max(1, revisions ?? 1) : null,
@@ -142,12 +144,17 @@ export async function buildBonus(monthParam?: string | null): Promise<BonusPaylo
     } else if (tier === 'senior') {
       max = 40;
       const o = ownEditing(p.id, 2);
-      const reviewed = tasks.filter(t => t.senior_ids.includes(String(p.id)) && !t.editor_ids.includes(String(p.id))).map(t => m.get(t.task_id)!);
+      // The Senior's pod: their direct reports (org chart); with none listed, the unassigned Base Editors on their team(s)
+      const direct = DIRECT_REPORTS.get(key);
+      const podKeys = direct?.size ? direct : new Set(TEAMS.filter(t => p.teamIds.includes(t.id)).flatMap(t => t.members)
+        .filter(mm => mm.id && tierOf(mm.role) === 'editor' && !HAS_MANAGER.has(memberKey(mm))).map(memberKey));
+      const podIds = new Set([...podKeys].map(k => k.replace(/^u:/, '')));
+      const reviewed = tasks.filter(t => t.editor_ids.some(e => podIds.has(e)) && !t.editor_ids.includes(String(p.id))).map(t => m.get(t.task_id)!);
       const podQ = rate(reviewed, qualityOk), revT = rate(reviewed, reviewOnTime(BONUS_RULES.reviewHours));
       lines = [
         { id: 'own', label: 'Own editing', weight: 10, earned: 10 * o.frac, value: `${o.perWeek.toFixed(1)} edits / week${o.qual ? ` · ${pct(o.qual.r)} quality` : ''}`, target: '2+ / week, on time, within 2 rounds', basis: `${o.n} edits` },
-        { ...rateLine('pod_quality', 'Pod quality', 10, podQ, 'reviewed edits'), value: podQ ? `${pct(podQ.r)} within ${BONUS_RULES.maxRevisions} rounds` : 'no reviewed edits' },
-        { ...rateLine('review_turnaround', 'Review turnaround', 10, revT, 'reviewed edits'), value: revT ? `${pct(revT.r)} reviewed within ${BONUS_RULES.reviewHours}h` : 'no review times yet' },
+        { ...rateLine('pod_quality', 'Pod quality', 10, podQ, `pod edits (${podKeys.size} editors, ${direct?.size ? 'direct reports' : 'unassigned on team'})`), value: podQ ? `${pct(podQ.r)} within ${BONUS_RULES.maxRevisions} rounds` : 'no pod edits' },
+        { ...rateLine('review_turnaround', 'Review turnaround', 10, revT, 'pod edits'), value: revT ? `${pct(revT.r)} reviewed within ${BONUS_RULES.reviewHours}h` : 'no review times yet' },
         manualLine('blockers', 'Fixing editing blockers'),
       ];
     } else {
@@ -169,7 +176,10 @@ export async function buildBonus(monthParam?: string | null): Promise<BonusPaylo
   }
   // Leads: "Senior Editor performance" = how close their teams' Seniors are to a full scorecard
   for (const c of cards.filter(c => c.tier === 'lead')) {
-    const seniors = cards.filter(s => s.tier === 'senior' && s.teams.some(t => c.teams.includes(t)));
+    // Seniors reporting to this Lead (org chart); with none listed, the Seniors on the Lead's teams
+    const direct = DIRECT_REPORTS.get(c.key);
+    const fromChart = direct ? cards.filter(s => s.tier === 'senior' && direct.has(s.key)) : [];
+    const seniors = fromChart.length ? fromChart : cards.filter(s => s.tier === 'senior' && s.teams.some(t => c.teams.includes(t)));
     const line = c.lines.find(l => l.id === 'senior_perf')!;
     if (seniors.length) {
       const avg = seniors.reduce((a, s) => a + s.total / s.max, 0) / seniors.length;
