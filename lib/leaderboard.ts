@@ -194,7 +194,8 @@ export function allocate(
 
   review.sort((a, b) => b.spend - a.spend);
   return { total: round2(total), attributed: round2(attributed), editors, review: review.map(r => ({ ...r, spend: round2(r.spend) })),
-    scopeSpend: { all: round2(scopeSpend.all), internal: round2(scopeSpend.internal), agency: round2(scopeSpend.agency) } };
+    // All = every credited dollar (people not on a team list too); Internal / Agency = only people on those teams
+    scopeSpend: { all: round2(attributed), internal: round2(scopeSpend.internal), agency: round2(scopeSpend.agency) } };
 }
 
 export function rank(editors: Allocation['editors'], prev: Map<string, number>): EditorRow[] {

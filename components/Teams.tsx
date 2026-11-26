@@ -52,9 +52,9 @@ export default function Teams() {
       {data && (
         <>
           <section className="stats">
-            <Stat label="All teams" value={money(tAll)} sub={`${data.total ? Math.round((tAll / data.total) * 100) : 0}% of ${money(data.total)} ad spend, each dollar once`} />
+            <Stat label="All teams" value={money(tAll)} sub={`${data.total ? Math.round((tAll / data.total) * 100) : 0}% of ${money(data.total)} ad spend · incl. people not on a team yet`} />
             <Stat label="Internal teams" value={money(tI)} sub={`${internal.length} teams`} />
-            <Stat label="Agency teams" value={money(tA)} sub={`${agency.length} teams · ${money(tI + tA - tAll)} also counted on Internal`} />
+            <Stat label="Agency teams" value={money(tA)} sub={`${agency.length} teams · resized agency briefs also count on Internal`} />
             <Stat label="Not credited yet" value={money(review)} sub="ads in Needs review on Editors" warn={review > 0} />
           </section>
           <Section title="Internal" teams={internal} total={tI} />

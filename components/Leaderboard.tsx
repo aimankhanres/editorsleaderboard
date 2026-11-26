@@ -109,7 +109,15 @@ export default function Leaderboard() {
   useEffect(() => { if (current !== 'review') setLastScope(scope); }, [current, scope]);
   const scopeTeams = teams.filter(t => inScope(t, scope));
   const scopeName = scope === 'all' ? 'All teams' : scope === 'internal' ? 'All internal teams' : 'All agency teams';
-  const team = picked ?? (isScope(current) && data ? mergeBoards(scopeTeams, current, scopeName, data.scopeSpend?.[scope]) : null);
+  // Credited people who aren't on any team list: shown in the All view and listed in Needs review
+  const unassigned = useMemo(() => {
+    if (!data) return [] as EditorRow[];
+    const onBoards = new Set(data.teams.flatMap(t => t.editors.map(e => e.key)));
+    return data.editors.filter(e => e.spend > 0 && !onBoards.has(e.key)).map(e => ({ ...e, role: 'Not on a team yet', inClickUp: true }));
+  }, [data]);
+  const unassignedBoard: TeamBoard = { id: 'unassigned', name: 'Not on a team', group: '', spend: 0, winners: 0, editors: unassigned };
+  const team = picked ?? (isScope(current) && data
+    ? mergeBoards(scope === 'all' ? [...scopeTeams, unassignedBoard] : scopeTeams, current, scopeName, data.scopeSpend?.[scope]) : null);
   const reviewCount = data?.review.length ?? 0;
   const label = 'All';
   const stale = data != null && (data.channel !== channel
@@ -152,7 +160,7 @@ export default function Leaderboard() {
       {current !== 'review' && (
         <nav className="teams" role="tablist" aria-label="Team">
           <button role="tab" aria-selected={isScope(current)} className={isScope(current) ? 'on' : ''} onClick={() => setView(scope)}>
-            {scopeName} <span className="count">{new Set(scopeTeams.flatMap(t => t.editors.map(e => e.key))).size}</span>
+            {scopeName} <span className="count">{new Set([...scopeTeams.flatMap(t => t.editors.map(e => e.key)), ...(scope === 'all' ? unassigned.map(e => e.key) : [])]).size}</span>
           </button>
           {scopeTeams.map(t => (
             <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
@@ -196,7 +204,7 @@ export default function Leaderboard() {
           <TeamView key={`${team.id}-${data.month}-${data.channel}-${data.range?.from ?? ''}-${data.range?.to ?? ''}`}
             team={team} total={data.total} label={label} custom={data.range != null} combined={isScope(current)} winnerSpend={data.winnerSpend} />
         )}
-        {data && current === 'review' && <ReviewView data={data} label={label} />}
+        {data && current === 'review' && <ReviewView data={data} label={label} unassigned={unassigned} />}
       </div>
     </main>
   );
@@ -272,7 +280,7 @@ function TeamView({ team, total, label, custom, combined, winnerSpend }: {
   );
 }
 
-function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }) {
+function ReviewView({ data, label, unassigned }: { data: LeaderboardPayload; label: string; unassigned: EditorRow[] }) {
   const unattributed = Math.max(0, data.total - data.attributed);
   return (
     <>
@@ -283,6 +291,7 @@ function ReviewView({ data, label }: { data: LeaderboardPayload; label: string }
         <Stat label="Shared briefs" value={data.splitMode === 'joint' ? 'Joint' : 'Split'} sub={data.splitMode === 'joint' ? 'credited to the pair' : 'split evenly between editors'} />
       </section>
       <Review items={data.review} />
+      <UnassignedGroup editors={unassigned} />
       <MissingEditorsGroup />
     </>
   );
@@ -551,6 +560,52 @@ function downloadCsv(kind: ReviewKind, items: ReviewItem[]) {
   a.download = `needs-review-${kind.replace(/_/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Needs review group: people credited with spend who aren't on any team list (so they only show under All) */
+function UnassignedGroup({ editors }: { editors: EditorRow[] }) {
+  const [open, setOpen] = useState(false);
+  if (!editors.length) return null;
+  const sum = editors.reduce((a, e) => a + e.spend, 0);
+  const download = () => {
+    const lines = [['Name in ClickUp', 'ClickUp user', 'Spend (USD)', 'Ads', 'Briefs', 'Top brief', 'Top brief task'],
+      ...editors.map(e => [e.name, e.key.replace(/^u:/, ''), e.spend.toFixed(2), e.ads, e.briefs.length, e.briefs[0]?.briefId ?? '', e.briefs[0]?.taskUrl ?? ''])];
+    const url = URL.createObjectURL(new Blob(['\ufeff' + lines.map(r => r.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `editors-not-on-a-team-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <section className="rgroup">
+      <button className="rhead" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <h3>{open ? '▾' : '▸'} Editors not on any team <span className="count">{editors.length}</span></h3>
+        <span className="rsum">{money(sum)} (already credited)</span>
+      </button>
+      <div className="rbar">
+        <p className="hint">These people are in a task&apos;s Editor field, so they get credit and show under All, but they aren&apos;t on any team list, so Internal / Agency and team boards leave them out. Tell us their team (or that they aren&apos;t an editor) to place them.</p>
+        <button className="btn-ghost small" onClick={download}>⬇ Download CSV ({editors.length})</button>
+      </div>
+      {open && (
+        <div className="scroll">
+          <table>
+            <thead><tr><th>Name in ClickUp</th><th className="r">Ads</th><th className="r">Briefs</th><th>Biggest brief</th><th className="r">Spend</th></tr></thead>
+            <tbody>
+              {editors.map(e => (
+                <tr key={e.key}>
+                  <td className="adname">{e.name}</td>
+                  <td className="r">{e.ads}</td>
+                  <td className="r">{e.briefs.length}</td>
+                  <td className="mono">{e.briefs[0] ? (e.briefs[0].taskUrl ? <a href={e.briefs[0].taskUrl} target="_blank" rel="noreferrer">{e.briefs[0].briefId}</a> : e.briefs[0].briefId) : '—'}</td>
+                  <td className="r">{money(e.spend)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 const MISSING_REASON: Record<MissingReason, string> = { spend: 'Has ad spend', finished: 'Edit finished', in_progress: 'In progress' };
