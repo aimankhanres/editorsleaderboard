@@ -123,7 +123,7 @@ export default function Capacity() {
           <div>
             <div className="crumb">Capacity</div>
             <h1>Editor capacity</h1>
-            <p className="sub">Edits finished per editor vs KPI · <strong>Resizing 2 a day</strong> · every other team <strong>1 a day</strong> · Leads 0</p>
+            <p className="sub">Edits finished per editor vs their KPI. KPIs are set on the <a href="/settings">Settings</a> screen.</p>
           </div>
         </div>
         <div className="sync">
@@ -252,7 +252,7 @@ function TeamCard({ team, data, forceOpen }: { team: CapacityTeam; data: Capacit
       <button className="cap-head" onClick={() => setOpen(o => !o)} aria-expanded={shown}>
         <div className="cap-title">
           <h2>{team.name}</h2>
-          <span className="kpi-chip">{data.week.startsWith('2026-10') && team.group !== 'Resizing' ? '3/week (Oct)' : `${team.kpi.perDay}/day · ${team.kpi.perWeek}/week`}</span>
+          <span className="kpi-chip">{team.kpiLabel}</span>
           {team.tracked > 0 && team.behind > 0 && <span className="behind-chip">{team.behind} behind</span>}
           {team.backlog > 0 && <span className="behind-chip" title={`${team.open} tasks in queue vs ${team.weekCapacity} a week of capacity`}>Backlog +{team.backlog}</span>}
           {team.tracked > 0 && team.idle > 0 && <span className="idle-tag" title="Editors with nothing in their queue right now">{team.idle} idle</span>}
@@ -332,8 +332,8 @@ function MemberRow({ m, team, data, cols }: { m: CapacityMember; team: CapacityT
           const d = data.days[i];
           const future = d > data.today;
           const off = dowOf(d) >= team.workDays;
-          const dayKpi = d.startsWith('2026-10') && team.group !== 'Resizing' ? 1 : team.kpi.perDay;
-          const cls = !m.inClickUp || future ? 'blank' : m.tier === 'lead' ? (n > 0 ? 'hit' : 'blank') : n >= dayKpi ? 'hit' : n > 0 ? 'part' : off ? 'blank' : 'miss';
+          const k = m.dayKpi[i] ?? 0, dayKpi = k > 0 ? Math.max(1, Math.round(k)) : 0;
+          const cls = !m.inClickUp || future ? 'blank' : !dayKpi ? (n > 0 ? 'hit' : 'blank') : n >= dayKpi ? 'hit' : n > 0 ? 'part' : off ? 'blank' : 'miss';
           return <span key={d} role="cell" className={`c-day cell ${cls} ${off ? 'off' : ''} ${d === data.today ? 'today' : ''}`}>{!m.inClickUp || future ? '' : n}</span>;
         })}
         <span role="cell" className="r c-done">{m.inClickUp ? <><b>{m.done}</b>{m.tier !== 'lead' && <small>/{m.target}</small>}</> : '—'}</span>
@@ -367,15 +367,8 @@ function KpiRules({ rules }: { rules: CapacityPayload['kpiRules'] }) {
       <button className="btn-ghost" onClick={() => setOpen(o => !o)} aria-expanded={open}>⚙ KPI rules</button>
       {open && (
         <div className="card kpi-pop" role="dialog" aria-label="KPI rules">
-          {rules.map(r => (
-            <div key={r.period}>
-              <div className="kpi-eff">{r.period}</div>
-              <table>
-                <tbody>{r.rows.map(x => <tr key={x.who}><td>{x.who}</td><td>{x.kpi}</td></tr>)}</tbody>
-              </table>
-            </div>
-          ))}
-          <p className="muted">Workdays: every day for Resizing, Mon–Fri for other teams. Leads&apos; own edits still count in team totals.</p>
+          <table><tbody>{rules.map((r, i) => <tr key={i}><td>{r.who}<div className="muted" style={{ fontSize: 12 }}>{r.when}</div></td><td>{r.kpi}</td></tr>)}</tbody></table>
+          <p className="muted">The most specific rule wins (a level beats a team, a team beats all). <a href="/settings">Change KPIs in Settings</a>.</p>
         </div>
       )}
     </div>

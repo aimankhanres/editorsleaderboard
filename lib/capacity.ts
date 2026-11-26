@@ -6,7 +6,9 @@
  */
 import { q } from './db';
 import { addDays, todayIn } from './dates';
-import { KPI_RULES, TEAMS, boardOf, countsOnTeam, memberKey, perDayFor, tierOf, type Tier, type TeamGroup, type TeamKpi } from './teams';
+import { TEAMS, boardOf, countsOnTeam, memberKey, tierOf, type Tier, type TeamGroup, type TeamKpi } from './teams';
+import { describeRules, perDay as kpiPerDay, ruleFor, workdaysOf } from './kpi';
+import { loadRules } from './kpi-store';
 import { ensureTaskTables, kvGet } from './store';
 
 export const CAPACITY_TZ = process.env.CAPACITY_TIMEZONE ?? 'Asia/Karachi';
@@ -19,6 +21,8 @@ export type CapacityMember = {
   key: string; name: string; role: string; tier: Tier;
   /** finished in the period: videos vs statics (ClickUp "Size" Static 4x5 / "Video Format/Style" Static) */
   videos: number; statics: number; minutes: number;
+  /** KPI for each day of `days` (from the Settings rules; 0 on a day off) */
+  dayKpi: number[];
   /** other teams this person is also on (their edits are split by the board each task came from) */
   alsoOn: string[];
   /** counted here: in Resilia's ClickUp and on a team whose edits happen there */
@@ -28,6 +32,8 @@ export type CapacityMember = {
 };
 export type CapacityTeam = {
   id: string; name: string; group: TeamGroup; kpi: TeamKpi; workDays: number;
+  /** the editor-level KPI in effect, in words ("2/day · 14/week") */
+  kpiLabel: string;
   /** false: this team edits in another ClickUp workspace (Agency), so nothing is measured */
   measured: boolean;
   members: CapacityMember[]; done: number; target: number; expected: number; remaining: number; open: number;
@@ -44,7 +50,7 @@ export type CapacityPayload = {
   teams: CapacityTeam[];
   company: { editors: number; done: number; target: number; expected: number; remaining: number; open: number; behind: number };
   maxDays: number;
-  kpiRules: typeof KPI_RULES;
+  kpiRules: ReturnType<typeof describeRules>;
   mirror: { tasks: number; lastSync: string | null; caughtUp: boolean };
 };
 
@@ -113,14 +119,15 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
   }
   const teamName = new Map(TEAMS.map(t => [t.id, t.name]));
 
-  // Workdays: perWeek / perDay of them from Monday (14/2 = 7 days, 5/1 = Mon–Fri). Capacity = each member's daily KPI
-  // (lib/teams perDayFor: tier and date rules) summed over the workdays in the range; expected = the same up to today.
+  // KPI rules from the Settings screen (lib/kpi): each member's KPI per day by team, level and date, 0 on days off.
+  // Capacity = that summed over the range; expected = the same up to today.
+  const rules = await loadRules();
   const teams: CapacityTeam[] = TEAMS.map(team => {
-    const workDays = Math.min(7, Math.round(team.kpi.perWeek / team.kpi.perDay));
-    const work = days.filter(d => dowOf(d) < workDays);
+    const workDays = workdaysOf(rules, team, weekEnd < today ? weekEnd : today);
     const measured = team.capacity !== false;
-    const kpiSum = (role: string, ds: string[]) => ds.reduce((a, d) => a + perDayFor(team, role, d), 0);
-    const weekDays = (w: string) => Array.from({ length: 7 }, (_, i) => addDays(w, i)).filter(d => dowOf(d) < workDays);
+    const perDayFor = (_t: typeof team, role: string, d: string) => kpiPerDay(rules, team, role, d);
+    const kpiSum = (role: string, ds: string[]) => ds.reduce((a, d) => a + kpiPerDay(rules, team, role, d), 0);
+    const weekDays = (w: string) => Array.from({ length: 7 }, (_, i) => addDays(w, i));
     const members: CapacityMember[] = team.members.map(mm => {
       const m = measured ? mm : { ...mm, id: null }; // agency teams: list people, measure nothing
       const key = memberKey(mm);
@@ -129,13 +136,14 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
       const mine = mineAll.filter(t => t.day >= week && t.day <= weekEnd).sort((a, b) => b.day.localeCompare(a.day));
       const counts = days.map(d => mine.filter(t => t.day === d).length);
       const done = mine.length;
-      const target = m.id ? Math.round(kpiSum(mm.role, work)) : 0;
-      const expected = m.id ? Math.round(kpiSum(mm.role, work.filter(d => d <= today))) : 0;
+      const target = m.id ? Math.round(kpiSum(mm.role, days)) : 0;
+      const expected = m.id ? Math.round(kpiSum(mm.role, days.filter(d => d <= today))) : 0;
       const slack = perDayFor(team, mm.role, today) || 1;
       const pace: Pace = !m.id ? 'none' : tier === 'lead' ? 'lead' : done >= target ? 'met' : done >= expected - slack ? 'on' : 'behind';
       const openN = m.id ? (openBy.get(m.id) ?? []).filter(o => countsOnTeam(key, team.id, o.board)).reduce((a, o) => a + o.n, 0) : 0;
       return {
         key, name: m.name, role: m.role, tier, inClickUp: m.id != null, days: counts, done, target, expected,
+        dayKpi: days.map(d => Math.round(perDayFor(team, mm.role, d) * 100) / 100),
         remaining: Math.max(0, target - done), open: openN, pace, tasks: mine.map(({ board: _b, secs: _s, ...t }) => t),
         minutes: Math.round(mine.reduce((a, t) => a + t.secs, 0) / 6) / 10,
         videos: mine.filter(t => !t.isStatic).length, statics: mine.filter(t => t.isStatic).length,
@@ -155,6 +163,7 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
     const weekCapacity = Math.round(tracked.reduce((s, x) => s + kpiSum(x.role, weekDays(mondayOf(today))), 0));
     return {
       id: team.id, name: team.name, group: team.group, kpi: team.kpi, workDays, measured, members,
+      kpiLabel: (r => (r ? `${Math.round((r.perWeek / r.workdays) * 100) / 100}/day · ${r.perWeek}/week` : 'no KPI'))(ruleFor(rules, team, 'Editor', weekEnd < today ? weekEnd : today)),
       done: sum(x => x.done), target: sum(x => x.target), expected: sum(x => x.expected), remaining: sum(x => x.remaining),
       open: sum(x => x.open), idle: tracked.filter(x => x.open === 0 && x.tier !== 'lead').length,
       weekCapacity, backlog: Math.max(0, sum(x => x.open) - weekCapacity), tracked: tracked.length,
@@ -180,7 +189,7 @@ export async function buildCapacity(opts: { week?: string | null; from?: string 
   const mirrorState = await kvGet<{ since: number; page: number }>('tasks_sync');
   const stats = await q<{ n: string }>(`SELECT COUNT(*) n FROM cu_tasks`);
   return {
-    mode, week, weekEnd, days, today, timezone: CAPACITY_TZ, current, teams, maxDays: MAX_RANGE_DAYS, kpiRules: KPI_RULES,
+    mode, week, weekEnd, days, today, timezone: CAPACITY_TZ, current, teams, maxDays: MAX_RANGE_DAYS, kpiRules: describeRules(rules),
     company: {
       editors: ppl.length, done: s(x => x.done), target: s(x => x.target), expected: s(x => x.expected),
       remaining: s(x => x.remaining), open: s(x => x.open), behind: ppl.filter(x => x.pace === 'behind').length,

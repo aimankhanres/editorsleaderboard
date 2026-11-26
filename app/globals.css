@@ -411,6 +411,19 @@ button.cap-row:hover:not(:disabled) > .c-ed, .cap-member.open .cap-row > .c-ed {
 .rbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .btn-ghost.small { padding: 4px 10px; font-size: 12.5px; }
 
+/* Settings: KPI rules */
+.set-lead { max-width: 900px; margin: 0 0 14px; }
+.set-table select, .set-table input { font: inherit; font-size: 13.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+.set-table input[type=number] { width: 72px; text-align: right; }
+.set-table input[type=text] { width: 100%; min-width: 140px; }
+.set-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 6px; }
+.set-spacer { flex: 1; }
+.set-note { margin: 4px 0 0; font-size: 13px; }
+.sec-h input[type=date] { font: inherit; font-size: 13.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+.set-history { padding: 8px 14px; display: flex; flex-direction: column; }
+.set-history > div { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.set-history > div:last-child { border-bottom: 0; }
+
 /* App shell: sidebar + content */
 .title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .crumb { font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 2px; letter-spacing: .01em; }
