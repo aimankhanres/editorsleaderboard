@@ -55,7 +55,7 @@ const PAGE = 1000;
 const PROBE_QUERY = 'SELECT SUM(spend) AS spend, channel FROM ads_table a WHERE event_date BETWEEN @startDate AND @endDate GROUP BY channel';
 
 async function runQuery<T = TwRow>(startDate: string, endDate: string, query: string = QUERY(cfg.tw.channel)): Promise<T[]> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const res = await fetch(`${cfg.tw.base}/orcabase/api/sql`, {
       method: 'POST',
       headers: { 'x-api-key': cfg.tw.apiKey, 'Content-Type': 'application/json' },
@@ -66,9 +66,10 @@ async function runQuery<T = TwRow>(startDate: string, endDate: string, query: st
       }),
       cache: 'no-store',
     });
-    if (res.status === 429 && attempt < 2) {
-      const wait = Number(res.headers.get('retry-after') ?? 5);
-      await new Promise(r => setTimeout(r, Math.min(wait, 20) * 1000));
+    if (res.status === 429 && attempt < 4) {
+      // rate limited: wait as asked (or back off 5s, 10s, 20s, 30s) and try again
+      const wait = Number(res.headers.get('retry-after') ?? 5 * 2 ** attempt);
+      await new Promise(r => setTimeout(r, Math.min(wait, 30) * 1000));
       continue;
     }
     const text = await res.text();

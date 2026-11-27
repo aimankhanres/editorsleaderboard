@@ -27,6 +27,9 @@ function chunks<T>(arr: T[], n = CHUNK): T[][] {
 // ---------------------------------------------------------------- ad_spend
 
 export async function upsertAdSpend(rows: AdDayRow[]): Promise<void> {
+  // Triple Whale can return the same ad twice for a day when its data shifts while we page through it; one row per
+  // (day, ad), the last one read, or Postgres refuses the batch ("cannot affect row a second time")
+  rows = [...new Map(rows.map(r => [`${r.date}|${r.adId}`, r])).values()];
   for (const part of chunks(rows)) {
     const payload = part.map(r => ({
       spend_date: r.date,

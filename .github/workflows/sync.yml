@@ -17,7 +17,7 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$SYNC_URL" ]; then echo "SYNC_URL not set, skipping"; exit 0; fi
-          # Temporary problems (Triple Whale 5xx, a Vercel timeout, no response) are retried once, then logged as a
+          # Temporary problems (Triple Whale 429 / 5xx, a Vercel timeout, no response) are retried once, then logged as a
           # warning instead of failing the run (no failure email); the next run 15 minutes later catches up.
           # Any other error still fails the run.
           for attempt in 1 2; do
@@ -26,7 +26,7 @@ jobs:
             code=${code:-000}
             cat body.json 2>/dev/null || true; echo
             if [ "$code" = "200" ]; then exit 0; fi
-            if [ "$code" = "000" ] || [ "$code" = "504" ] || grep -qE 'Triple Whale (5[0-9]{2}|400: Request failed with status code 5)|FUNCTION_INVOCATION_TIMEOUT' body.json 2>/dev/null; then
+            if [ "$code" = "000" ] || [ "$code" = "504" ] || grep -qE 'Triple Whale (429|5[0-9]{2}|400: Request failed with status code 5)|Too Many Requests|FUNCTION_INVOCATION_TIMEOUT' body.json 2>/dev/null; then
               if [ "$attempt" = 1 ]; then echo "Temporary problem (HTTP $code), retrying in 60s"; sleep 60; continue; fi
               echo "::warning::Sync hit a temporary problem twice (HTTP $code); the next scheduled sync will catch up"; exit 0
             fi
