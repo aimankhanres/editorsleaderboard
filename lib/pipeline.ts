@@ -29,8 +29,9 @@ export type PipelinePayload = {
 };
 
 const STALE_DAYS = 60;
-/** Statuses that hold ideas, not briefs in production ("Shelved Ideas", "High Intent Ideas"): never in the queue */
-const NOT_BRIEFS = '(shelved|ideas?)\\y'; // Postgres: \y = word boundary
+/** Statuses that are never in the queue: ideas, not briefs in production ("Shelved Ideas", "High Intent Ideas"), and
+ * "Final Asset Delivered" even when the Asset Delivered Date wasn't filled in */
+const NOT_BRIEFS = '(shelved|ideas?|delivered)\\y'; // Postgres: \y = word boundary
 
 export async function buildPipeline(opts: { from?: string | null; to?: string | null } = {}): Promise<PipelinePayload> {
   await ensureTaskTables();
