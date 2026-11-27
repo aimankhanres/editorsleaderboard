@@ -54,8 +54,20 @@ const PAGE = 1000;
 /** Triple Whale's own documented example query: tells "bad query" apart from "bad key / shop". */
 const PROBE_QUERY = 'SELECT SUM(spend) AS spend, channel FROM ads_table a WHERE event_date BETWEEN @startDate AND @endDate GROUP BY channel';
 
+// Be a light, polite client: Triple Whale allows 600 requests a minute; we space ours at least 300 ms apart
+// (at most ~200 a minute, a third of that), across both channels, and back off when it says "too many requests".
+const MIN_GAP_MS = 300;
+let nextSlot = 0;
+async function throttle() {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + MIN_GAP_MS;
+  if (at > now) await new Promise(r => setTimeout(r, at - now));
+}
+
 async function runQuery<T = TwRow>(startDate: string, endDate: string, query: string = QUERY(cfg.tw.channel)): Promise<T[]> {
   for (let attempt = 0; attempt < 5; attempt++) {
+    await throttle();
     const res = await fetch(`${cfg.tw.base}/orcabase/api/sql`, {
       method: 'POST',
       headers: { 'x-api-key': cfg.tw.apiKey, 'Content-Type': 'application/json' },
